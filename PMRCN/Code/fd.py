@@ -1,14 +1,15 @@
 
-m sklearn import *
+from sklearn import *
 import sklearn
 import pandas as pd
 import numpy as np
 import xgboost as xgb
 
-train = pd.read_csv('../input/training_variants')
-test = pd.read_csv('../input/test_variants')
-trainx = pd.read_csv('../input/training_text', sep="\|\|", engine='python', header=None, skiprows=1, names=["ID","Text"])
-testx = pd.read_csv('../input/test_text', sep="\|\|", engine='python', header=None, skiprows=1, names=["ID","Text"])
+data_folder = '/mnt/d/personal/kaggle/PMRCN/Data/'
+train = pd.read_csv(data_folder + 'training_variants')
+test = pd.read_csv(data_folder + 'test_variants')
+trainx = pd.read_csv(data_folder + 'training_text', sep="\|\|", engine='python', header=None, skiprows=1, names=["ID","Text"])
+testx = pd.read_csv(data_folder + 'test_text', sep="\|\|", engine='python', header=None, skiprows=1, names=["ID","Text"])
 
 train = pd.merge(train, trainx, how='left', on='ID').fillna('')
 y = train['Class'].values
