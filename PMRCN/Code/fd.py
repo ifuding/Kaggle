@@ -4,14 +4,18 @@ import sklearn
 import pandas as pd
 import numpy as np
 import xgboost as xgb
+import lightgbm as lgb
 
-data_folder = '/mnt/d/personal/kaggle/PMRCN/Data/'
+data_folder = '../Data/'
 train = pd.read_csv(data_folder + 'training_variants')
+print train.dtypes
 test = pd.read_csv(data_folder + 'test_variants')
 trainx = pd.read_csv(data_folder + 'training_text', sep="\|\|", engine='python', header=None, skiprows=1, names=["ID","Text"])
+print trainx.dtypes
 testx = pd.read_csv(data_folder + 'test_text', sep="\|\|", engine='python', header=None, skiprows=1, names=["ID","Text"])
 
 train = pd.merge(train, trainx, how='left', on='ID').fillna('')
+print train.dtypes
 y = train['Class'].values
 train = train.drop(['Class'], axis=1)
 
@@ -23,10 +27,10 @@ df_all['Gene_Share'] = df_all.apply(lambda r: sum([1 for w in r['Gene'].split(' 
 df_all['Variation_Share'] = df_all.apply(lambda r: sum([1 for w in r['Variation'].split(' ') if w in r['Text'].split(' ')]), axis=1)
 
 #commented for Kaggle Limits
-#for i in range(56):
-#    df_all['Gene_'+str(i)] = df_all['Gene'].map(lambda x: str(x[i]) if len(x)>i else '')
-#    df_all['Variation'+str(i)] = df_all['Variation'].map(lambda x: str(x[i]) if len(x)>i else '')
-
+for i in range(56):
+    df_all['Gene_'+str(i)] = df_all['Gene'].map(lambda x: str(x[i]) if len(x)>i else '')
+    df_all['Variation'+str(i)] = df_all['Variation'].map(lambda x: str(x[i]) if len(x)>i else '')
+print df_all.dtypes
 
 gen_var_lst = sorted(list(train.Gene.unique()) + list(train.Variation.unique()))
 print(len(gen_var_lst))
@@ -34,26 +38,27 @@ gen_var_lst = [x for x in gen_var_lst if len(x.split(' '))==1]
 print(len(gen_var_lst))
 i_ = 0
 #commented for Kaggle Limits
-#for gen_var_lst_itm in gen_var_lst:
-#    if i_ % 100 == 0: print(i_)
-#    df_all['GV_'+str(gen_var_lst_itm)] = df_all['Text'].map(lambda x: str(x).count(str(gen_var_lst_itm)))
-#    i_ += 1
+for gen_var_lst_itm in gen_var_lst:
+    if i_ % 100 == 0: print(i_)
+    df_all['GV_'+str(gen_var_lst_itm)] = df_all['Text'].map(lambda x: str(x).count(str(gen_var_lst_itm)))
+    i_ += 1
 
 for c in df_all.columns:
     if df_all[c].dtype == 'object':
         if c in ['Gene','Variation']:
             lbl = preprocessing.LabelEncoder()
-            df_all[c+'_lbl_enc'] = lbl.fit_transform(df_all[c].values)  
+            df_all[c+'_lbl_enc'] = lbl.fit_transform(df_all[c].values)
             df_all[c+'_len'] = df_all[c].map(lambda x: len(str(x)))
             df_all[c+'_words'] = df_all[c].map(lambda x: len(str(x).split(' ')))
         elif c != 'Text':
             lbl = preprocessing.LabelEncoder()
             df_all[c] = lbl.fit_transform(df_all[c].values)
-        if c=='Text': 
+        if c=='Text':
             df_all[c+'_len'] = df_all[c].map(lambda x: len(str(x)))
-            df_all[c+'_words'] = df_all[c].map(lambda x: len(str(x).split(' '))) 
+            df_all[c+'_words'] = df_all[c].map(lambda x: len(str(x).split(' ')))
 
 train = df_all.iloc[:len(train)]
+print train.dtypes
 test = df_all.iloc[len(train):]
 
 class cust_regression_vals(sklearn.base.BaseEstimator, sklearn.base.TransformerMixin):
@@ -80,7 +85,7 @@ fp = pipeline.Pipeline([
             ('pi1', pipeline.Pipeline([('Gene', cust_txt_col('Gene')), ('count_Gene', feature_extraction.text.CountVectorizer(analyzer=u'char', ngram_range=(1, 8))), ('tsvd1', decomposition.TruncatedSVD(n_components=20, n_iter=25, random_state=12))])),
             ('pi2', pipeline.Pipeline([('Variation', cust_txt_col('Variation')), ('count_Variation', feature_extraction.text.CountVectorizer(analyzer=u'char', ngram_range=(1, 8))), ('tsvd2', decomposition.TruncatedSVD(n_components=20, n_iter=25, random_state=12))])),
             #commented for Kaggle Limits
-            #('pi3', pipeline.Pipeline([('Text', cust_txt_col('Text')), ('tfidf_Text', feature_extraction.text.TfidfVectorizer(ngram_range=(1, 2))), ('tsvd3', decomposition.TruncatedSVD(n_components=50, n_iter=25, random_state=12))]))
+            ('pi3', pipeline.Pipeline([('Text', cust_txt_col('Text')), ('tfidf_Text', feature_extraction.text.TfidfVectorizer(ngram_range=(1, 2))), ('tsvd3', decomposition.TruncatedSVD(n_components=50, n_iter=25, random_state=12))]))
         ])
     )])
 
@@ -89,35 +94,135 @@ test = fp.transform(test); print(test.shape)
 
 y = y - 1 #fix for zero bound array
 
-denom = 0
-fold = 1 #Change to 5, 1 for Kaggle Limits
-for i in range(fold):
-    params = {
-        'eta': 0.03333,
-        'max_depth': 4,
-        'objective': 'multi:softprob',
-        'eval_metric': 'mlogloss',
-        'num_class': 9,
-        'seed': i,
-        'silent': True
-    }
-    x1, x2, y1, y2 = model_selection.train_test_split(train, y, test_size=0.18, random_state=i)
-    watchlist = [(xgb.DMatrix(x1, y1), 'train'), (xgb.DMatrix(x2, y2), 'valid')]
-    model = xgb.train(params, xgb.DMatrix(x1, y1), 1000,  watchlist, verbose_eval=50, early_stopping_rounds=100)
-    score1 = metrics.log_loss(y2, model.predict(xgb.DMatrix(x2), ntree_limit=model.best_ntree_limit), labels = list(range(9)))
-    print(score1)
-    #if score < 0.9:
-    if denom != 0:
-        pred = model.predict(xgb.DMatrix(test), ntree_limit=model.best_ntree_limit+80)
-        preds += pred
-    else:
-        pred = model.predict(xgb.DMatrix(test), ntree_limit=model.best_ntree_limit+80)
-        preds = pred.copy()
-    denom += 1
-    submission = pd.DataFrame(pred, columns=['class'+str(c+1) for c in range(9)])
+def xgbTrain(flod = 5):
+    """
+    """
+    denom = 0
+    fold = 5 #Change to 5, 1 for Kaggle Limits
+    for i in range(fold):
+        params = {
+            'eta': 0.03333,
+            'max_depth': 4,
+            'objective': 'multi:softprob',
+            'eval_metric': 'mlogloss',
+            'num_class': 9,
+            'seed': i,
+            'silent': True
+        }
+        x1, x2, y1, y2 = model_selection.train_test_split(train, y, test_size=0.18, random_state=i)
+        watchlist = [(xgb.DMatrix(x1, y1), 'train'), (xgb.DMatrix(x2, y2), 'valid')]
+        model = xgb.train(params, xgb.DMatrix(x1, y1), 1000,  watchlist, verbose_eval=50, early_stopping_rounds=100)
+        score1 = metrics.log_loss(y2, model.predict(xgb.DMatrix(x2), ntree_limit=model.best_ntree_limit), labels = list(range(9)))
+        print(score1)
+        #if score < 0.9:
+        if denom != 0:
+            pred = model.predict(xgb.DMatrix(test), ntree_limit=model.best_ntree_limit+80)
+            preds += pred
+        else:
+            pred = model.predict(xgb.DMatrix(test), ntree_limit=model.best_ntree_limit+80)
+            preds = pred.copy()
+        denom += 1
+        submission = pd.DataFrame(pred, columns=['class'+str(c+1) for c in range(9)])
+        submission['ID'] = pid
+        submission.to_csv('submission_xgb_fold_'  + str(i) + '.csv', index=False)
+
+    preds /= denom
+    submission = pd.DataFrame(preds, columns=['class'+str(c+1) for c in range(9)])
     submission['ID'] = pid
-    submission.to_csv('submission_xgb_fold_'  + str(i) + '.csv', index=False)
-preds /= denom
-submission = pd.DataFrame(preds, columns=['class'+str(c+1) for c in range(9)])
-submission['ID'] = pid
-submission.to_csv('submission_xgb.csv', index=False)
+    submission.to_csv('submission_xgb.csv', index=False)
+
+
+def lgbm_train(model_k = None):
+    """
+    LGB Training
+    """
+    d_train = lgb.Dataset(train, label = y)
+
+    params = {
+        'task': 'train',
+        'boosting_type': 'gbdt',
+        'objective': 'multiclass',
+        'metric': {'multi_logloss'},
+        'num_class': 9,
+      #  'num_leaves': 256,
+      #  'max_depth': 12,
+      #  'feature_fraction': 0.9,
+      #  'bagging_fraction': 0.95,
+      #  'bagging_freq': 5,
+        'num_leaves': 30,
+        'min_sum_hessian_in_leaf': 20,
+        'max_depth': 5,
+        'learning_rate': 0.05,
+        'feature_fraction': 0.8,
+        'verbose': 1
+    }
+
+    ROUNDS = 2
+
+    print('light GBM train :-)')
+    bst = lgb.train(params, d_train, ROUNDS)
+    # lgb.plot_importance(bst, figsize=(9,20))
+
+  #  print('light GBM test')
+  #  preds = bst.predict(df_test[lgbm_features])
+
+  #  df_test['pred'] = preds
+  #  best_th, max_F1 = find_best_th(df_test[LABEL_COLUMN].values, df_test['pred'].values)
+  #  # pd.DataFrame(params).to_csv(str(max_F1) + str(lgbm_epoch))
+  #  print str(params) + str(max_F1) + "_" + str(lgbm_epoch)
+    return bst
+
+
+def model_eval(model, model_type, train_data_frame):
+    """
+    """
+    if model_type == 'l':
+        preds = model.predict(train_data_frame)
+    elif model_type == 'k':
+        norm_slope = model[1]
+        norm_intercept = model[2]
+        data = train_data_frame * norm_slope + norm_intercept
+        preds = keras_eval(model[0], data.values)
+    elif model_type == 't':
+        print "ToDO"
+
+    return preds
+
+
+def gen_sub(models, model_type):
+    """
+    Evaluate single Type model
+    """
+    preds = model_eval(models, model_type, df_valide[valide_features])
+    df_valide['pred'] = preds
+
+    TRESHOLD = best_th  # guess, should be tuned with crossval on a subset of train data
+
+    d = dict()
+    for row in df_valide.itertuples():
+        if row.pred > TRESHOLD:
+            try:
+                d[row.order_id] += ' ' + str(row.product_id)
+            except:
+                d[row.order_id] = str(row.product_id)
+
+    for order in test_orders.order_id:
+        if order not in d:
+            d[order] = 'None'
+
+    sub = pd.DataFrame.from_dict(d, orient='index')
+
+    sub.reset_index(inplace=True)
+    sub.columns = ['order_id', 'products']
+    sub_name = 'sub_' + model_type + "_" + str(F1) + \
+        "_stdNorm_sigmoid_" + str(hidden_units) + "_" + \
+        str(dropout_rate) + "_" + str(dnn_epoch) + \
+        "_" + str(lgbm_epoch) + "_log.csv"
+    sub.to_csv(sub_name, index=False)
+
+
+if __name__ == "__main__":
+    # model_k, th, F1 = keras_train(10)
+    # gen_sub(model_k, 'k', th, F1)
+    model_l = lgbm_train()#model_k)
+    gen_sub(model_l, 'l') #model_k)
