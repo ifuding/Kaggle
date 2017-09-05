@@ -26,9 +26,11 @@ test = pd.merge(test, testx, how='left', on='ID').fillna('')
 pid = test['ID'].values
 
 df_all = pd.concat((train, test), axis=0, ignore_index=True)
-df_all['Gene_Share'] = df_all.apply(lambda r: sum([1 for w in r['Gene'].split(' ') if w in r['Text'].split(' ')]), axis=1)
-df_all['Variation_Share'] = df_all.apply(lambda r: sum([1 for w in r['Variation'].split(' ') if w in r['Text'].split(' ')]), axis=1)
+df_all['Gene_Share'] = df_all.apply(lambda r: sum([1 for w in r['Gene'].split(' ') if w in r['Text'].split(' ')]), axis=1).astype(np.int8)
+df_all['Variation_Share'] = df_all.apply(lambda r: sum([1 for w in r['Variation'].split(' ') if w in r['Text'].split(' ')]), axis=1).astype(np.int8)
 
+print df_all[['Gene_Share', 'Variation_Share']].max()
+# exit(0)
 if full_feature:
     #commented for Kaggle Limits
     for i in range(56):
@@ -44,7 +46,7 @@ if full_feature:
     #commented for Kaggle Limits
     for gen_var_lst_itm in gen_var_lst:
         if i_ % 100 == 0: print(i_)
-        df_all['GV_'+str(gen_var_lst_itm)] = df_all['Text'].map(lambda x: str(x).count(str(gen_var_lst_itm)))
+        df_all['GV_'+str(gen_var_lst_itm)] = df_all['Text'].map(lambda x: str(x).count(str(gen_var_lst_itm))).astype(np.int8)
         i_ += 1
 
 for c in df_all.columns:
