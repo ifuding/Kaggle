@@ -6,6 +6,8 @@ import numpy as np
 import xgboost as xgb
 import lightgbm as lgb
 
+full_feature = False
+
 data_folder = '../Data/'
 train = pd.read_csv(data_folder + 'training_variants')
 print train.dtypes
@@ -15,6 +17,7 @@ print trainx.dtypes
 testx = pd.read_csv(data_folder + 'test_text', sep="\|\|", engine='python', header=None, skiprows=1, names=["ID","Text"])
 
 train = pd.merge(train, trainx, how='left', on='ID').fillna('')
+#train = train.iloc[1:1000]
 print train.dtypes
 y = train['Class'].values
 train = train.drop(['Class'], axis=1)
@@ -26,22 +29,23 @@ df_all = pd.concat((train, test), axis=0, ignore_index=True)
 df_all['Gene_Share'] = df_all.apply(lambda r: sum([1 for w in r['Gene'].split(' ') if w in r['Text'].split(' ')]), axis=1)
 df_all['Variation_Share'] = df_all.apply(lambda r: sum([1 for w in r['Variation'].split(' ') if w in r['Text'].split(' ')]), axis=1)
 
-#commented for Kaggle Limits
-for i in range(56):
-    df_all['Gene_'+str(i)] = df_all['Gene'].map(lambda x: str(x[i]) if len(x)>i else '')
-    df_all['Variation'+str(i)] = df_all['Variation'].map(lambda x: str(x[i]) if len(x)>i else '')
-print df_all.dtypes
+if full_feature:
+    #commented for Kaggle Limits
+    for i in range(56):
+        df_all['Gene_'+str(i)] = df_all['Gene'].map(lambda x: str(x[i]) if len(x)>i else '')
+        df_all['Variation'+str(i)] = df_all['Variation'].map(lambda x: str(x[i]) if len(x)>i else '')
+    print df_all.dtypes
 
-gen_var_lst = sorted(list(train.Gene.unique()) + list(train.Variation.unique()))
-print(len(gen_var_lst))
-gen_var_lst = [x for x in gen_var_lst if len(x.split(' '))==1]
-print(len(gen_var_lst))
-i_ = 0
-#commented for Kaggle Limits
-for gen_var_lst_itm in gen_var_lst:
-    if i_ % 100 == 0: print(i_)
-    df_all['GV_'+str(gen_var_lst_itm)] = df_all['Text'].map(lambda x: str(x).count(str(gen_var_lst_itm)))
-    i_ += 1
+    gen_var_lst = sorted(list(train.Gene.unique()) + list(train.Variation.unique()))
+    print(len(gen_var_lst))
+    gen_var_lst = [x for x in gen_var_lst if len(x.split(' '))==1]
+    print(len(gen_var_lst))
+    i_ = 0
+    #commented for Kaggle Limits
+    for gen_var_lst_itm in gen_var_lst:
+        if i_ % 100 == 0: print(i_)
+        df_all['GV_'+str(gen_var_lst_itm)] = df_all['Text'].map(lambda x: str(x).count(str(gen_var_lst_itm)))
+        i_ += 1
 
 for c in df_all.columns:
     if df_all[c].dtype == 'object':
@@ -136,7 +140,15 @@ def lgbm_train(model_k = None):
     """
     LGB Training
     """
-    d_train = lgb.Dataset(train, label = y)
+    train_len = len(train)
+    print("Over all training size:")
+    print train_len
+    train_data = train[:train_len * 9 / 10]
+    train_label = y[:train_len * 9 / 10]
+    valide_data = train[train_len * 9 / 10:]
+    valide_label = y[train_len * 9 / 10:]
+    d_train = lgb.Dataset(train_data, train_label)
+    d_valide = lgb.Dataset(valide_data, valide_label)
 
     params = {
         'task': 'train',
@@ -149,27 +161,21 @@ def lgbm_train(model_k = None):
       #  'feature_fraction': 0.9,
       #  'bagging_fraction': 0.95,
       #  'bagging_freq': 5,
-        'num_leaves': 30,
-        'min_sum_hessian_in_leaf': 20,
-        'max_depth': 5,
-        'learning_rate': 0.05,
-        'feature_fraction': 0.8,
-        'verbose': 1
+        'num_leaves': 6,
+      #  'min_sum_hessian_in_leaf': 20,
+        'max_depth': 4,
+        'learning_rate': 0.4,
+        'feature_fraction': 1,
+        'verbose': 1,
+      #   'valid_sets': [d_valide],
+        'num_boost_round': 13
     }
 
-    ROUNDS = 2
+    # ROUNDS = 1
 
     print('light GBM train :-)')
-    bst = lgb.train(params, d_train, ROUNDS)
-    # lgb.plot_importance(bst, figsize=(9,20))
+    bst = lgb.train(params , d_train, valid_sets = [d_valide])#, num_boost_round = 1)
 
-  #  print('light GBM test')
-  #  preds = bst.predict(df_test[lgbm_features])
-
-  #  df_test['pred'] = preds
-  #  best_th, max_F1 = find_best_th(df_test[LABEL_COLUMN].values, df_test['pred'].values)
-  #  # pd.DataFrame(params).to_csv(str(max_F1) + str(lgbm_epoch))
-  #  print str(params) + str(max_F1) + "_" + str(lgbm_epoch)
     return bst
 
 
@@ -193,33 +199,11 @@ def gen_sub(models, model_type):
     """
     Evaluate single Type model
     """
-    preds = model_eval(models, model_type, df_valide[valide_features])
-    df_valide['pred'] = preds
+    preds = model_eval(models, model_type, test)
 
-    TRESHOLD = best_th  # guess, should be tuned with crossval on a subset of train data
-
-    d = dict()
-    for row in df_valide.itertuples():
-        if row.pred > TRESHOLD:
-            try:
-                d[row.order_id] += ' ' + str(row.product_id)
-            except:
-                d[row.order_id] = str(row.product_id)
-
-    for order in test_orders.order_id:
-        if order not in d:
-            d[order] = 'None'
-
-    sub = pd.DataFrame.from_dict(d, orient='index')
-
-    sub.reset_index(inplace=True)
-    sub.columns = ['order_id', 'products']
-    sub_name = 'sub_' + model_type + "_" + str(F1) + \
-        "_stdNorm_sigmoid_" + str(hidden_units) + "_" + \
-        str(dropout_rate) + "_" + str(dnn_epoch) + \
-        "_" + str(lgbm_epoch) + "_log.csv"
-    sub.to_csv(sub_name, index=False)
-
+    submission = pd.DataFrame(preds, columns=['class'+str(c+1) for c in range(9)])
+    submission['ID'] = pid
+    submission.to_csv('submission_lgb.csv', index=False)
 
 if __name__ == "__main__":
     # model_k, th, F1 = keras_train(10)
