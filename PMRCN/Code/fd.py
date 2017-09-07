@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 import xgboost as xgb
 import lightgbm as lgb
+from time import gmtime, strftime
 
 full_feature = True
 
@@ -147,15 +148,15 @@ def xgbTrain(flod = 5):
     submission.to_csv('submission_xgb.csv', index=False)
 
 
-def lgbm_train(model_k = None):
+def lgbm_train(fold = 5):
     """
     LGB Training
     """
     train_len = len(train)
     print("Over all training size:")
     print train_len
-    train_data = train[:train_len * 9 / 10]
-    train_label = y[:train_len * 9 / 10]
+    train_data = train #[:train_len * 9 / 10]
+    train_label = y #[:train_len * 9 / 10]
     valide_data = train[train_len * 9 / 10:]
     valide_label = y[train_len * 9 / 10:]
     d_train = lgb.Dataset(train_data, train_label)
@@ -175,19 +176,31 @@ def lgbm_train(model_k = None):
         'num_leaves': 6,
       #  'min_sum_hessian_in_leaf': 20,
         'max_depth': 4,
-        'learning_rate': 0.4,
-        'feature_fraction': 1,
-        'verbose': 1,
+        'learning_rate': 0.025,
+        'feature_fraction': 0.5,
+        'verbose': 0,
       #   'valid_sets': [d_valide],
-        'num_boost_round': 50
+        'num_boost_round': 665,
+        'feature_fraction_seed': 1
+        # 'random_state': 10
+        # 'verbose_eval': 20
+        #'min_data_in_leaf': 665
     }
 
     # ROUNDS = 1
 
-    print('light GBM train :-)')
-    bst = lgb.train(params , d_train, valid_sets = [d_valide])#, num_boost_round = 1)
+    models = []
 
-    return bst
+    for i in range(fold):
+        print 'fold: %d th light GBM train :-)' % (i)
+        params['feature_fraction_seed'] = i
+        bst = lgb.train(params , d_train, verbose_eval = False, init_model = None)#, valid_sets = [d_valide])#, num_boost_round = 1)
+        pred = model_eval(bst, 'l', test)
+        print pred.shape
+        print pred[0, :]
+        models.append(bst)
+
+    return models
 
 
 def model_eval(model, model_type, train_data_frame):
@@ -210,15 +223,25 @@ def gen_sub(models, model_type):
     """
     Evaluate single Type model
     """
-    preds = model_eval(models, model_type, test)
+    preds = None
+    for model in models:
+        pred = model_eval(model, model_type, test)
+        print pred.shape
+        print pred[0, :]
+        if preds is None:
+            preds = pred.copy()
+        else:
+            preds += pred
 
+    preds /= len(models)
     submission = pd.DataFrame(preds, columns=['class'+str(c+1) for c in range(9)])
     submission['ID'] = pid
-    submission.to_csv('submission_lgb.csv', index=False)
+    sub_name = "submission" + strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) + ".csv"
+    #submission.to_csv(sub_name, index=False)
 
 if __name__ == "__main__":
     # model_k, th, F1 = keras_train(10)
     # gen_sub(model_k, 'k', th, F1)
-    xgbTrain();
-    # model_l = lgbm_train()#model_k)
-    # gen_sub(model_l, 'l') #model_k)
+    # xgbTrain();
+    model_l = lgbm_train(3)#model_k)
+    gen_sub(model_l, 'l') #model_k)
