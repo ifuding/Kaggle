@@ -110,11 +110,17 @@ train = np.load("./train_array.npy")
 test = np.load("./test_array.npy")
 y = y - 1 #fix for zero bound array
 
+print train[0]
+exit(0)
+#train = train[:100]
+#y = y[:100]
+
 def xgbTrain(flod = 5):
     """
     """
     denom = 0
     fold = 5 #Change to 5, 1 for Kaggle Limits
+    models = []
     for i in range(fold):
         params = {
             'eta': 0.03333,
@@ -130,23 +136,26 @@ def xgbTrain(flod = 5):
         model = xgb.train(params, xgb.DMatrix(x1, y1), 1000,  watchlist, verbose_eval=50, early_stopping_rounds=100)
         score1 = metrics.log_loss(y2, model.predict(xgb.DMatrix(x2), ntree_limit=model.best_ntree_limit), labels = list(range(9)))
         print(score1)
+
+        models.append((model, 'x'))
         #if score < 0.9:
-        if denom != 0:
-            pred = model.predict(xgb.DMatrix(test), ntree_limit=model.best_ntree_limit+80)
-            preds += pred
-        else:
-            pred = model.predict(xgb.DMatrix(test), ntree_limit=model.best_ntree_limit+80)
-            preds = pred.copy()
-        denom += 1
-        submission = pd.DataFrame(pred, columns=['class'+str(c+1) for c in range(9)])
-        submission['ID'] = pid
-        submission.to_csv('submission_xgb_fold_'  + str(i) + '.csv', index=False)
+        #if denom != 0:
+        #    pred = model.predict(xgb.DMatrix(test), ntree_limit=model.best_ntree_limit+80)
+        #    preds += pred
+        #else:
+        #    pred = model.predict(xgb.DMatrix(test), ntree_limit=model.best_ntree_limit+80)
+        #    preds = pred.copy()
+        #denom += 1
+        #submission = pd.DataFrame(pred, columns=['class'+str(c+1) for c in range(9)])
+        #submission['ID'] = pid
+        #submission.to_csv('submission_xgb_fold_'  + str(i) + '.csv', index=False)
 
-    preds /= denom
-    submission = pd.DataFrame(preds, columns=['class'+str(c+1) for c in range(9)])
-    submission['ID'] = pid
-    submission.to_csv('submission_xgb.csv', index=False)
-
+    #preds /= denom
+    #submission = pd.DataFrame(preds, columns=['class'+str(c+1) for c in range(9)])
+    #submission['ID'] = pid
+    #submission.to_csv('submission_xgb.csv', index=False)
+    # model_type = ['x'] * len(models)
+    return models
 
 def lgbm_train(fold = 5):
     """
@@ -155,51 +164,64 @@ def lgbm_train(fold = 5):
     train_len = len(train)
     print("Over all training size:")
     print train_len
-    train_data = train #[:train_len * 9 / 10]
-    train_label = y #[:train_len * 9 / 10]
+    train_data = train#[:train_len * 3 / 10]
+    train_label = y#[:train_len * 3 / 10]
     valide_data = train[train_len * 9 / 10:]
     valide_label = y[train_len * 9 / 10:]
-    d_train = lgb.Dataset(train_data, train_label)
-    d_valide = lgb.Dataset(valide_data, valide_label)
-
-    params = {
-        'task': 'train',
-        'boosting_type': 'gbdt',
-        'objective': 'multiclass',
-        'metric': {'multi_logloss'},
-        'num_class': 9,
-      #  'num_leaves': 256,
-      #  'max_depth': 12,
-      #  'feature_fraction': 0.9,
-      #  'bagging_fraction': 0.95,
-      #  'bagging_freq': 5,
-        'num_leaves': 6,
-      #  'min_sum_hessian_in_leaf': 20,
-        'max_depth': 4,
-        'learning_rate': 0.025,
-        'feature_fraction': 0.5,
-        'verbose': 0,
-      #   'valid_sets': [d_valide],
-        'num_boost_round': 665,
-        'feature_fraction_seed': 1
-        # 'random_state': 10
-        # 'verbose_eval': 20
-        #'min_data_in_leaf': 665
-    }
-
-    # ROUNDS = 1
 
     models = []
-
     for i in range(fold):
-        print 'fold: %d th light GBM train :-)' % (i)
-        params['feature_fraction_seed'] = i
-        bst = lgb.train(params , d_train, verbose_eval = False, init_model = None)#, valid_sets = [d_valide])#, num_boost_round = 1)
-        pred = model_eval(bst, 'l', test)
-        print pred.shape
-        print pred[0, :]
-        models.append(bst)
+        d_train = lgb.Dataset(train_data, train_label)
+        d_valide = lgb.Dataset(valide_data, valide_label)
 
+        params = {
+            'task': 'train',
+            'boosting_type': 'gbdt',
+            'objective': 'multiclass',
+            'metric': {'multi_logloss'},
+            'num_class': 9,
+          #  'num_leaves': 256,
+          #  'max_depth': 12,
+          #  'feature_fraction': 0.9,
+          #  'bagging_fraction': 0.95,
+          #  'bagging_freq': 5,
+            'num_leaves': 60,
+          #  'min_sum_hessian_in_leaf': 20,
+            'max_depth': 10,
+            'learning_rate': 0.02,
+            'feature_fraction': 0.5,
+            'verbose': 0,
+          #   'valid_sets': [d_valide],
+            'num_boost_round': 327,
+            'feature_fraction_seed': i,
+            # 'bagging_fraction': 0.9,
+            # 'bagging_freq': 15,
+            # 'bagging_seed': i,
+            # 'early_stopping_round': 10
+            # 'random_state': 10
+            # 'verbose_eval': 20
+            #'min_data_in_leaf': 665
+        }
+
+        # ROUNDS = 1
+        print 'fold: %d th light GBM train :-)' % (i)
+        # params['feature_fraction_seed'] = i
+        bst = lgb.train(
+                        params ,
+                        d_train,
+                        verbose_eval = False
+                        # valid_sets = [d_valide]
+                        #num_boost_round = 1
+                        )
+        #cv_result = lgb.cv(params, d_train, nfold=10)
+        #pd.DataFrame(cv_result).to_csv('cv_result', index = False)
+        #exit(0)
+        # pred = model_eval(bst, 'l', test)
+        #print pred.shape
+        #print pred[0, :]
+        models.append((bst, 'l'))
+
+    # model_type = ['l'] * len(models)
     return models
 
 
@@ -215,19 +237,21 @@ def model_eval(model, model_type, train_data_frame):
         preds = keras_eval(model[0], data.values)
     elif model_type == 't':
         print "ToDO"
+    elif model_type == 'x':
+        preds = model.predict(xgb.DMatrix(train_data_frame), ntree_limit=model.best_ntree_limit+80)
 
     return preds
 
 
-def gen_sub(models, model_type):
+def gen_sub(models):
     """
     Evaluate single Type model
     """
     preds = None
-    for model in models:
+    for (model, model_type) in models:
         pred = model_eval(model, model_type, test)
-        print pred.shape
-        print pred[0, :]
+        #print pred.shape
+        #print pred[0, :]
         if preds is None:
             preds = pred.copy()
         else:
@@ -237,11 +261,12 @@ def gen_sub(models, model_type):
     submission = pd.DataFrame(preds, columns=['class'+str(c+1) for c in range(9)])
     submission['ID'] = pid
     sub_name = "submission" + strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) + ".csv"
-    #submission.to_csv(sub_name, index=False)
+    submission.to_csv(sub_name, index=False)
 
 if __name__ == "__main__":
     # model_k, th, F1 = keras_train(10)
     # gen_sub(model_k, 'k', th, F1)
     # xgbTrain();
-    model_l = lgbm_train(3)#model_k)
-    gen_sub(model_l, 'l') #model_k)
+    model_l = lgbm_train(10)#model_k)
+    model_x = xgbTrain(5)#model_k)
+    gen_sub(model_l + model_x) #model_k)
