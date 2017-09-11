@@ -225,6 +225,151 @@ def lgbm_train(fold = 5):
     return models
 
 
+def create_model(input_len):
+    model = Sequential()
+    model.add(Dense(hidden_units[0], activation='sigmoid', input_dim = input_len))
+    if DNN_BN:
+        model.add(BatchNormalization())
+    if dropout_rate > 0:
+        model.add(Dropout(dropout_rate))
+    model.add(Dense(hidden_units[1], activation='sigmoid'))
+    if DNN_BN:
+        model.add(BatchNormalization())
+    if dropout_rate > 0:
+        model.add(Dropout(dropout_rate))
+    # model.add(Dropout(0.1))
+    #model.add(Dense(32, activation='relu'))
+    #model.add(Dropout(0.2))
+    model.add(Dense(1, activation='sigmoid'))
+
+    # optimizer = SGD(lr=1e-3, decay=1e-6, momentum=0.9, nesterov=True)
+    optimizer = RMSprop(lr=1e-3, rho = 0.9, epsilon = 1e-8)
+    model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics = ['accuracy'])
+
+    return model
+
+
+def create_embedding_model():
+    """
+    """
+   # aisle_id = Input(shape=(1,))
+   # aisle_embedding = Embedding(135, 6, input_length = 1)(aisle_id)
+   # aisle_embedding = Reshape((6,))(aisle_embedding)
+
+   # department_id = Input(shape=(1,))
+   # department_embedding = Embedding(22, 4, input_length = 1)(department_id)
+   # department_embedding = Reshape((4,))(department_embedding)
+
+    #product_id = Input(shape=(1,))
+    #product_embedding = Embedding(49969, 16, input_length = 1)(product_id)
+    #product_embedding = Reshape((16,))(product_embedding)
+
+    dense_input = Input(shape=(len(CONTINUOUS_COLUMNS),))
+    merge_input = dense_input #concatenate([dense_input, aisle_embedding, department_embedding], axis = 1)
+
+    merge_len = len(CONTINUOUS_COLUMNS) + 6 + 4
+    output = create_model(merge_len)(merge_input)
+
+    model = Model([dense_input, aisle_id, department_id], output)
+    optimizer = RMSprop(lr=1e-3, rho = 0.9, epsilon = 1e-8)
+    # optimizer = SGD(lr=1e-2, decay=1e-6, momentum=0.9, nesterov=True)
+    model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics = ['accuracy'])
+
+    return model
+
+
+def keras_train(nfolds = 10):
+    """
+    Detect Fish or noFish
+    """
+
+    print "Start gen training data, shuffle and normalize!"
+    df_train, labels = features(train_orders, labels_given=True)
+    # df_train = df_train.sample(frac = 1).reset_index(drop = True)
+    # labels = np_utils.to_categorical(labels, 2)
+
+    df_train_part = df_train[dnn_features]
+    train_target = df_train[LABEL_COLUMN].values
+    # norm_min = df_train_part.min()
+    # norm_max = df_train_part.max()
+    norm_slope = 1. / df_train_part.std()
+    norm_intercept = -1. * norm_slope * df_train_part.mean()
+    norm_train = df_train_part * norm_slope + norm_intercept
+    # norm_train.to_csv("norm_train", index = False)
+
+    train_data = norm_train[CONTINUOUS_COLUMNS].values
+    aisle_ids = df_train_part['aisle_id'].values
+    department_ids = df_train_part['department_id'].values
+    # product_ids = df_train_part['product_id'].values
+
+    # train_target = labels
+    train_size = len(train_data)
+    print "Training Data size : %d" % train_size
+    df_test = train_data[train_size * 9 / 10 : ]
+    aisle_id_test = aisle_ids[train_size * 9 / 10 : ]
+    department_id_test = department_ids[train_size * 9 / 10 : ]
+    # product_id_test = product_ids[train_size * 9 / 10 : ]
+    df_test_label = train_target[train_size * 9 / 10 : ]
+
+    yfull_train = dict()
+    kf = KFold(len(labels), n_folds=nfolds, shuffle=True)
+    num_fold = 0
+    sum_score = 0
+    models = []
+    for train_index, test_index in kf:
+        # model = create_model(classes = 2)
+        model = create_embedding_model()
+
+        X_train = train_data[train_index]
+        Y_train = train_target[train_index]
+        X_valid = train_data[test_index]
+        Y_valid = train_target[test_index]
+        aisle_id_train = aisle_ids[train_index]
+        aisle_id_valide = aisle_ids[test_index]
+        department_id_train = department_ids[train_index]
+        department_id_valide = department_ids[test_index]
+       # product_id_train = product_ids[train_index]
+        #product_id_valide = product_ids[test_index]
+
+       # print aisle_id_train
+       # pd.DataFrame(X_train).to_csv("norm_train", index = False)
+       # pd.DataFrame(Y_train).to_csv("train_labels", index = False)
+       # pd.DataFrame(X_valid).to_csv("norm_valide", index = False)
+       # pd.DataFrame(Y_valid).to_csv("valid_labels", index = False)
+
+        num_fold += 1
+        print('Start KFold number {} from {}'.format(num_fold, nfolds))
+        print('Split train: ', len(X_train), len(Y_train))
+        print('Split valid: ', len(X_valid), len(Y_valid))
+
+        callbacks = [
+            EarlyStopping(monitor='val_loss', patience=3, verbose=0),
+        ]
+        model.fit([X_train, aisle_id_train, department_id_train], Y_train, batch_size=batch_size, epochs=dnn_epoch,
+                shuffle=True, verbose=2, validation_data=([X_valid, aisle_id_valide, department_id_valide], Y_valid)
+                , callbacks=callbacks)
+        # print model.get_weights()
+        # predictions_valid = model.predict(X_valid, batch_size=batch_size, verbose=2)
+        # predictions_train = model.predict(X_train, batch_size=batch_size, verbose=2)
+        # pd.DataFrame(predictions_train).to_csv("re_train", index = False)
+        # pd.DataFrame(predictions_valid).to_csv("re_valide", index = False)
+        #score = log_loss(Y_valid, predictions_valid)
+        #print('Score log_loss: ', score)
+        #sum_score += score*len(test_index)
+
+        models.append(model)
+        if len(models) == 1:
+            break
+
+    avg_preds = keras_eval(models, [df_test, aisle_id_test, department_id_test])
+    # pd.DataFrame(avg_preds).to_csv("tuneTh_pred", index = False)
+    # pd.DataFrame(Y_valid).to_csv("tuneTh_labels", index = False)
+
+    best_th, max_F1 = find_best_th(df_test_label, avg_preds)
+
+    return ((models, norm_slope, norm_intercept), best_th, max_F1)
+
+
 def model_eval(model, model_type, train_data_frame):
     """
     """
