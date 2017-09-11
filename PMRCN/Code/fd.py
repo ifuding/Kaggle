@@ -7,6 +7,25 @@ import xgboost as xgb
 import lightgbm as lgb
 from time import gmtime, strftime
 
+from sklearn.cross_validation import KFold
+from keras.models import Sequential, Model
+from keras.layers.core import Dense, Dropout, Flatten, Reshape
+from keras.layers.normalization import BatchNormalization
+from keras.layers.embeddings import Embedding
+from keras.layers import Input, concatenate
+from keras.layers.convolutional import Convolution2D, MaxPooling2D, ZeroPadding2D, AveragePooling2D
+from keras.optimizers import SGD, RMSprop, Adam
+from keras.callbacks import EarlyStopping
+from keras.utils import np_utils
+from sklearn.metrics import log_loss
+from keras import __version__ as keras_version
+
+HIDDEN_UNITS = [16, 8]
+DNN_EPOCHS = 40
+BATCH_SIZE = 5
+DNN_BN = True
+DROPOUT_RATE = 0
+
 full_feature = True
 
 data_folder = '../Data/'
@@ -43,6 +62,7 @@ pid = test['ID'].values
 #    print(len(gen_var_lst))
 #    gen_var_lst = [x for x in gen_var_lst if len(x.split(' '))==1]
 #    print(len(gen_var_lst))
+#    exit(0)
 #    i_ = 0
 #    #commented for Kaggle Limits
 #    for gen_var_lst_itm in gen_var_lst:
@@ -110,8 +130,18 @@ train = np.load("./train_array.npy")
 test = np.load("./test_array.npy")
 y = y - 1 #fix for zero bound array
 
-print train[0]
-exit(0)
+CONTINUOUS_INDICES = []
+SPARCE_INDICES = []
+
+for i in range((train.shape)[1]):
+    if (i >= 2 and i <= 113) or i == 3205 or i == 3208:
+        SPARCE_INDICES.append(i)
+    else:
+        CONTINUOUS_INDICES.append(i)
+train = train[:, CONTINUOUS_INDICES]
+test = test[:, CONTINUOUS_INDICES]
+
+print train.shape
 #train = train[:100]
 #y = y[:100]
 
@@ -138,24 +168,9 @@ def xgbTrain(flod = 5):
         print(score1)
 
         models.append((model, 'x'))
-        #if score < 0.9:
-        #if denom != 0:
-        #    pred = model.predict(xgb.DMatrix(test), ntree_limit=model.best_ntree_limit+80)
-        #    preds += pred
-        #else:
-        #    pred = model.predict(xgb.DMatrix(test), ntree_limit=model.best_ntree_limit+80)
-        #    preds = pred.copy()
-        #denom += 1
-        #submission = pd.DataFrame(pred, columns=['class'+str(c+1) for c in range(9)])
-        #submission['ID'] = pid
-        #submission.to_csv('submission_xgb_fold_'  + str(i) + '.csv', index=False)
 
-    #preds /= denom
-    #submission = pd.DataFrame(preds, columns=['class'+str(c+1) for c in range(9)])
-    #submission['ID'] = pid
-    #submission.to_csv('submission_xgb.csv', index=False)
-    # model_type = ['x'] * len(models)
     return models
+
 
 def lgbm_train(fold = 5):
     """
@@ -221,35 +236,34 @@ def lgbm_train(fold = 5):
         #print pred[0, :]
         models.append((bst, 'l'))
 
-    # model_type = ['l'] * len(models)
     return models
 
 
 def create_model(input_len):
     model = Sequential()
-    model.add(Dense(hidden_units[0], activation='sigmoid', input_dim = input_len))
+    model.add(Dense(HIDDEN_UNITS[0], activation='sigmoid', input_dim = input_len))
     if DNN_BN:
         model.add(BatchNormalization())
-    if dropout_rate > 0:
-        model.add(Dropout(dropout_rate))
-    model.add(Dense(hidden_units[1], activation='sigmoid'))
+    if DROPOUT_RATE > 0:
+        model.add(Dropout(DROPOUT_RATE))
+    model.add(Dense(HIDDEN_UNITS[1], activation='sigmoid'))
     if DNN_BN:
         model.add(BatchNormalization())
-    if dropout_rate > 0:
-        model.add(Dropout(dropout_rate))
+    if DROPOUT_RATE > 0:
+        model.add(Dropout(DROPOUT_RATE))
     # model.add(Dropout(0.1))
     #model.add(Dense(32, activation='relu'))
     #model.add(Dropout(0.2))
-    model.add(Dense(1, activation='sigmoid'))
+    model.add(Dense(9, activation='softmax'))
 
     # optimizer = SGD(lr=1e-3, decay=1e-6, momentum=0.9, nesterov=True)
     optimizer = RMSprop(lr=1e-3, rho = 0.9, epsilon = 1e-8)
-    model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics = ['accuracy'])
+    model.compile(optimizer=optimizer, loss='categorical_crossentropy', metrics = ['accuracy'])
 
     return model
 
 
-def create_embedding_model():
+def create_embedding_model(CONTINUOUS_COLUMNS = 100):
     """
     """
    # aisle_id = Input(shape=(1,))
@@ -264,16 +278,18 @@ def create_embedding_model():
     #product_embedding = Embedding(49969, 16, input_length = 1)(product_id)
     #product_embedding = Reshape((16,))(product_embedding)
 
-    dense_input = Input(shape=(len(CONTINUOUS_COLUMNS),))
+    # CONTINUOUS_COLUMNS = (train.shape)[1]
+    print "model input size: %d" % CONTINUOUS_COLUMNS
+    dense_input = Input(shape=(CONTINUOUS_COLUMNS,))
     merge_input = dense_input #concatenate([dense_input, aisle_embedding, department_embedding], axis = 1)
 
-    merge_len = len(CONTINUOUS_COLUMNS) + 6 + 4
+    merge_len = CONTINUOUS_COLUMNS# + 6 + 4
     output = create_model(merge_len)(merge_input)
 
-    model = Model([dense_input, aisle_id, department_id], output)
+    model = Model([dense_input], output)
     optimizer = RMSprop(lr=1e-3, rho = 0.9, epsilon = 1e-8)
     # optimizer = SGD(lr=1e-2, decay=1e-6, momentum=0.9, nesterov=True)
-    model.compile(optimizer=optimizer, loss='binary_crossentropy', metrics = ['accuracy'])
+    model.compile(optimizer=Adam(), loss='categorical_crossentropy', metrics = ['accuracy'])
 
     return model
 
@@ -282,60 +298,23 @@ def keras_train(nfolds = 10):
     """
     Detect Fish or noFish
     """
-
     print "Start gen training data, shuffle and normalize!"
-    df_train, labels = features(train_orders, labels_given=True)
-    # df_train = df_train.sample(frac = 1).reset_index(drop = True)
-    # labels = np_utils.to_categorical(labels, 2)
 
-    df_train_part = df_train[dnn_features]
-    train_target = df_train[LABEL_COLUMN].values
-    # norm_min = df_train_part.min()
-    # norm_max = df_train_part.max()
-    norm_slope = 1. / df_train_part.std()
-    norm_intercept = -1. * norm_slope * df_train_part.mean()
-    norm_train = df_train_part * norm_slope + norm_intercept
-    # norm_train.to_csv("norm_train", index = False)
+    train_data = train
+    train_target = np_utils.to_categorical(y)
 
-    train_data = norm_train[CONTINUOUS_COLUMNS].values
-    aisle_ids = df_train_part['aisle_id'].values
-    department_ids = df_train_part['department_id'].values
-    # product_ids = df_train_part['product_id'].values
+    kf = KFold(len(train_target), n_folds=nfolds, shuffle=True)
 
-    # train_target = labels
-    train_size = len(train_data)
-    print "Training Data size : %d" % train_size
-    df_test = train_data[train_size * 9 / 10 : ]
-    aisle_id_test = aisle_ids[train_size * 9 / 10 : ]
-    department_id_test = department_ids[train_size * 9 / 10 : ]
-    # product_id_test = product_ids[train_size * 9 / 10 : ]
-    df_test_label = train_target[train_size * 9 / 10 : ]
-
-    yfull_train = dict()
-    kf = KFold(len(labels), n_folds=nfolds, shuffle=True)
     num_fold = 0
-    sum_score = 0
     models = []
     for train_index, test_index in kf:
         # model = create_model(classes = 2)
-        model = create_embedding_model()
+        model = create_embedding_model((train_data.shape)[1])
 
         X_train = train_data[train_index]
         Y_train = train_target[train_index]
         X_valid = train_data[test_index]
         Y_valid = train_target[test_index]
-        aisle_id_train = aisle_ids[train_index]
-        aisle_id_valide = aisle_ids[test_index]
-        department_id_train = department_ids[train_index]
-        department_id_valide = department_ids[test_index]
-       # product_id_train = product_ids[train_index]
-        #product_id_valide = product_ids[test_index]
-
-       # print aisle_id_train
-       # pd.DataFrame(X_train).to_csv("norm_train", index = False)
-       # pd.DataFrame(Y_train).to_csv("train_labels", index = False)
-       # pd.DataFrame(X_valid).to_csv("norm_valide", index = False)
-       # pd.DataFrame(Y_valid).to_csv("valid_labels", index = False)
 
         num_fold += 1
         print('Start KFold number {} from {}'.format(num_fold, nfolds))
@@ -345,45 +324,26 @@ def keras_train(nfolds = 10):
         callbacks = [
             EarlyStopping(monitor='val_loss', patience=3, verbose=0),
         ]
-        model.fit([X_train, aisle_id_train, department_id_train], Y_train, batch_size=batch_size, epochs=dnn_epoch,
-                shuffle=True, verbose=2, validation_data=([X_valid, aisle_id_valide, department_id_valide], Y_valid)
+        model.fit([X_train], Y_train, batch_size=BATCH_SIZE, epochs=DNN_EPOCHS,
+                shuffle=True, verbose=2, validation_data=([X_valid], Y_valid)
                 , callbacks=callbacks)
-        # print model.get_weights()
-        # predictions_valid = model.predict(X_valid, batch_size=batch_size, verbose=2)
-        # predictions_train = model.predict(X_train, batch_size=batch_size, verbose=2)
-        # pd.DataFrame(predictions_train).to_csv("re_train", index = False)
-        # pd.DataFrame(predictions_valid).to_csv("re_valide", index = False)
-        #score = log_loss(Y_valid, predictions_valid)
-        #print('Score log_loss: ', score)
-        #sum_score += score*len(test_index)
 
-        models.append(model)
-        if len(models) == 1:
-            break
+        models.append((model, 'k'))
 
-    avg_preds = keras_eval(models, [df_test, aisle_id_test, department_id_test])
-    # pd.DataFrame(avg_preds).to_csv("tuneTh_pred", index = False)
-    # pd.DataFrame(Y_valid).to_csv("tuneTh_labels", index = False)
-
-    best_th, max_F1 = find_best_th(df_test_label, avg_preds)
-
-    return ((models, norm_slope, norm_intercept), best_th, max_F1)
+    return models
 
 
-def model_eval(model, model_type, train_data_frame):
+def model_eval(model, model_type, data_frame):
     """
     """
     if model_type == 'l':
-        preds = model.predict(train_data_frame)
+        preds = model.predict(data_frame)
     elif model_type == 'k':
-        norm_slope = model[1]
-        norm_intercept = model[2]
-        data = train_data_frame * norm_slope + norm_intercept
-        preds = keras_eval(model[0], data.values)
+        preds = model.predict(data_frame, batch_size=BATCH_SIZE, verbose=2)
     elif model_type == 't':
         print "ToDO"
     elif model_type == 'x':
-        preds = model.predict(xgb.DMatrix(train_data_frame), ntree_limit=model.best_ntree_limit+80)
+        preds = model.predict(xgb.DMatrix(data_frame), ntree_limit=model.best_ntree_limit+80)
 
     return preds
 
@@ -392,6 +352,7 @@ def gen_sub(models):
     """
     Evaluate single Type model
     """
+    print('Start generate submission!')
     preds = None
     for (model, model_type) in models:
         pred = model_eval(model, model_type, test)
@@ -406,12 +367,13 @@ def gen_sub(models):
     submission = pd.DataFrame(preds, columns=['class'+str(c+1) for c in range(9)])
     submission['ID'] = pid
     sub_name = "submission" + strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) + ".csv"
+    print('Output to ' + sub_name)
     submission.to_csv(sub_name, index=False)
 
 if __name__ == "__main__":
-    # model_k, th, F1 = keras_train(10)
+    model_k = keras_train(10)
     # gen_sub(model_k, 'k', th, F1)
     # xgbTrain();
-    model_l = lgbm_train(10)#model_k)
-    model_x = xgbTrain(5)#model_k)
-    gen_sub(model_l + model_x) #model_k)
+    #model_l = lgbm_train(10)#model_k)
+    #model_x = xgbTrain(5)#model_k)
+    # gen_sub(model_k) #model_k)
