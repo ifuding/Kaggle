@@ -6,21 +6,23 @@ import numpy as np
 import xgboost as xgb
 import lightgbm as lgb
 from time import gmtime, strftime
+import numpy.random as rng
 
 from sklearn.cross_validation import KFold
 from keras.models import Sequential, Model
 from keras.layers.core import Dense, Dropout, Flatten, Reshape
 from keras.layers.normalization import BatchNormalization
 from keras.layers.embeddings import Embedding
-from keras.layers import Input, concatenate
+from keras.layers import Input, concatenate, merge
 from keras.layers.convolutional import Convolution2D, MaxPooling2D, ZeroPadding2D, AveragePooling2D
 from keras.optimizers import SGD, RMSprop, Adam
 from keras.callbacks import EarlyStopping
 from keras.utils import np_utils
+from keras import backend as K
 from sklearn.metrics import log_loss
 from keras import __version__ as keras_version
 
-HIDDEN_UNITS = [16, 8]
+HIDDEN_UNITS = [128, 32]
 DNN_EPOCHS = 40
 BATCH_SIZE = 5
 DNN_BN = True
@@ -53,7 +55,7 @@ pid = test['ID'].values
 ## exit(0)
 #if full_feature:
 #    #commented for Kaggle Limits
-#    for i in range(56):
+#    for i in range(5):
 #        df_all['Gene_'+str(i)] = df_all['Gene'].map(lambda x: str(x[i]) if len(x)>i else '')
 #        df_all['Variation'+str(i)] = df_all['Variation'].map(lambda x: str(x[i]) if len(x)>i else '')
 #    print df_all.dtypes
@@ -62,13 +64,14 @@ pid = test['ID'].values
 #    print(len(gen_var_lst))
 #    gen_var_lst = [x for x in gen_var_lst if len(x.split(' '))==1]
 #    print(len(gen_var_lst))
-#    exit(0)
 #    i_ = 0
 #    #commented for Kaggle Limits
 #    for gen_var_lst_itm in gen_var_lst:
 #        if i_ % 100 == 0: print(i_)
 #        df_all['GV_'+str(gen_var_lst_itm)] = df_all['Text'].map(lambda x: str(x).count(str(gen_var_lst_itm))).astype(np.int8)
 #        i_ += 1
+#        if i_ == 5:
+#            break
 #
 #for c in df_all.columns:
 #    if df_all[c].dtype == 'object':
@@ -85,7 +88,10 @@ pid = test['ID'].values
 #            df_all[c+'_words'] = df_all[c].map(lambda x: len(str(x).split(' ')))
 #
 #train = df_all.iloc[:len(train)]
+#print "... train dtypes before svd ..."
 #print train.dtypes
+#print train.head()
+#exit(0)
 #test = df_all.iloc[len(train):]
 #
 #class cust_regression_vals(sklearn.base.BaseEstimator, sklearn.base.TransformerMixin):
@@ -134,7 +140,7 @@ CONTINUOUS_INDICES = []
 SPARCE_INDICES = []
 
 for i in range((train.shape)[1]):
-    if (i >= 2 and i <= 113) or i == 3205 or i == 3208:
+    if (i >= 2 and i <= 113) or (i >= 3205 and i <= 3212):
         SPARCE_INDICES.append(i)
     else:
         CONTINUOUS_INDICES.append(i)
@@ -241,12 +247,12 @@ def lgbm_train(fold = 5):
 
 def create_model(input_len):
     model = Sequential()
-    model.add(Dense(HIDDEN_UNITS[0], activation='sigmoid', input_dim = input_len))
+    model.add(Dense(HIDDEN_UNITS[0], activation='relu', input_dim = input_len))
     if DNN_BN:
         model.add(BatchNormalization())
     if DROPOUT_RATE > 0:
         model.add(Dropout(DROPOUT_RATE))
-    model.add(Dense(HIDDEN_UNITS[1], activation='sigmoid'))
+    model.add(Dense(HIDDEN_UNITS[1], activation='relu'))
     if DNN_BN:
         model.add(BatchNormalization())
     if DROPOUT_RATE > 0:
@@ -270,15 +276,6 @@ def create_embedding_model(CONTINUOUS_COLUMNS = 100):
    # aisle_embedding = Embedding(135, 6, input_length = 1)(aisle_id)
    # aisle_embedding = Reshape((6,))(aisle_embedding)
 
-   # department_id = Input(shape=(1,))
-   # department_embedding = Embedding(22, 4, input_length = 1)(department_id)
-   # department_embedding = Reshape((4,))(department_embedding)
-
-    #product_id = Input(shape=(1,))
-    #product_embedding = Embedding(49969, 16, input_length = 1)(product_id)
-    #product_embedding = Reshape((16,))(product_embedding)
-
-    # CONTINUOUS_COLUMNS = (train.shape)[1]
     print "model input size: %d" % CONTINUOUS_COLUMNS
     dense_input = Input(shape=(CONTINUOUS_COLUMNS,))
     merge_input = dense_input #concatenate([dense_input, aisle_embedding, department_embedding], axis = 1)
@@ -289,9 +286,120 @@ def create_embedding_model(CONTINUOUS_COLUMNS = 100):
     model = Model([dense_input], output)
     optimizer = RMSprop(lr=1e-3, rho = 0.9, epsilon = 1e-8)
     # optimizer = SGD(lr=1e-2, decay=1e-6, momentum=0.9, nesterov=True)
-    model.compile(optimizer=Adam(), loss='categorical_crossentropy', metrics = ['accuracy'])
+    model.compile(optimizer = Adam(),
+            loss='categorical_crossentropy', metrics = ['accuracy'])
 
     return model
+
+
+def create_siamese_net(input_size):
+    """
+    """
+    input_shape = (input_size, )
+    left_input = Input(input_shape)
+    right_input = Input(input_shape)
+    #build model to use in each siamese 'leg'
+    model = Sequential()
+    model.add(Dense(HIDDEN_UNITS[0], activation='sigmoid', input_dim = input_size))
+    if DNN_BN:
+        model.add(BatchNormalization())
+    if DROPOUT_RATE > 0:
+        model.add(Dropout(DROPOUT_RATE))
+    model.add(Dense(HIDDEN_UNITS[1], activation='sigmoid'))
+    if DNN_BN:
+        model.add(BatchNormalization())
+    if DROPOUT_RATE > 0:
+        model.add(Dropout(DROPOUT_RATE))
+    #encode each of the two inputs into a vector with the convnet
+    encoded_l = model(left_input)
+    encoded_r = model(right_input)
+    #merge two encoded inputs with the l1 distance between them
+    L1_distance = lambda x: K.abs(x[0]-x[1])
+    both = merge([encoded_l,encoded_r], mode = L1_distance, output_shape=lambda x: x[0])
+    prediction = Dense(1,activation='sigmoid')(both)
+    siamese_net = Model(input=[left_input,right_input],output=prediction)
+    #optimizer = SGD(0.0004,momentum=0.6,nesterov=True,decay=0.0003)
+
+    optimizer = Adam()
+    #//TODO: get layerwise learning rates and momentum annealing scheme described in paperworking
+    siamese_net.compile(loss="binary_crossentropy",optimizer=optimizer)
+
+    siamese_net.count_params()
+    return siamese_net
+
+class Siamese_Loader:
+    #For loading batches and testing tasks to a siamese net
+    def __init__(self,Xtrain,Xval = None):
+        self.Xval = Xval
+        self.Xtrain = Xtrain
+        self.n_classes, self.n_examples,self.feature_size = Xtrain.shape
+        # self.n_val,self.n_ex_val,_,_ = Xval.shape
+
+    def get_batch(self,n):
+        #Create batch of pairs, half same class, half different class
+        categories = rng.choice(self.n_classes,size=(n,),replace=False)
+        pairs=[np.zeros((n, self.feature_size)) for i in range(2)]
+        targets=np.zeros((n,))
+        targets[n//2:] = 1
+        for i in range(n):
+            category = categories[i]
+            idx_1 = rng.randint(0,self.n_examples)
+            pairs[0][i,:] = self.Xtrain[category,idx_1] #.reshape(self.feature_size)
+            idx_2 = rng.randint(0,self.n_examples)
+            #pick images of same class for 1st half, different for 2nd
+            category_2 = category if i >= n//2 else (category + rng.randint(1,self.n_classes)) % self.n_classes
+            pairs[1][i,:] = self.Xtrain[category_2,idx_2] #.reshape(self.w,self.h,1)
+        return pairs, targets
+
+    def make_oneshot_task(self,N):
+        #Create pairs of test image, support set for testing N way one-shot learning.
+        categories = rng.choice(self.n_val,size=(N,),replace=False)
+        indices = rng.randint(0,self.n_ex_val,size=(N,))
+        true_category = categories[0]
+        ex1, ex2 = rng.choice(self.n_examples,replace=False,size=(2,))
+        test_image = np.asarray([self.Xval[true_category,ex1,:,:]]*N).reshape(N,self.w,self.h,1)
+        support_set = self.Xval[categories,indices,:,:]
+        support_set[0,:,:] = self.Xval[true_category,ex2]
+        support_set = support_set.reshape(N,self.w,self.h,1)
+        pairs = [test_image,support_set]
+        targets = np.zeros((N,))
+        targets[0] = 1
+        return pairs, targets
+
+    def test_oneshot(self,model,N,k,verbose=0):
+        #Test average N way oneshot learning accuracy of a siamese neural net over k one-shot tasks
+        n_correct = 0
+        for i in range(k):
+            inputs, targets = self.make_oneshot_task(N)
+            probs = model.predict(inputs)
+            if np.argmax(probs) == 0:
+                n_correct+=1
+        percent_correct = (100.0*n_correct / k)
+        return percent_correct
+
+
+def siamese_train():
+    """
+    """
+    train_data = [[] for i in range(9)]
+    i = 0
+    for feature in train:
+        train_data[y[i]].append(feature)
+        # np.insert(train_data[y[i]], 0, feature, axis = 0)
+        i += 1
+    for i in range(9):
+    #    train_data[i] = np.array(train_data[i])
+        print len(train_data[i])
+    print 'i = %d' % i
+    train_data = np.array([np.array(xi) for xi in train_data])
+    for i in range(9):
+    #    train_data[i] = np.array(train_data[i])
+        print type(train_data[i])
+    print "train data shape before gen pair"
+    print train_data.shape
+    siamese_data_loader = Siamese_Loader(train_data)
+    pairs, targets = siamese_data_loader.get_batch(100000)
+    return pairs, targets
 
 
 def keras_train(nfolds = 10):
@@ -300,16 +408,18 @@ def keras_train(nfolds = 10):
     """
     print "Start gen training data, shuffle and normalize!"
 
-    train_data = train
-    train_target = np_utils.to_categorical(y)
+    #train_data = train
+    #train_target = np_utils.to_categorical(y)
 
+    train_data, train_target = siamese_train()
     kf = KFold(len(train_target), n_folds=nfolds, shuffle=True)
 
     num_fold = 0
     models = []
     for train_index, test_index in kf:
         # model = create_model(classes = 2)
-        model = create_embedding_model((train_data.shape)[1])
+        # model = create_embedding_model((train_data.shape)[1])
+        model = create_siamese_net((train.shape)[1])
 
         X_train = train_data[train_index]
         Y_train = train_target[train_index]
