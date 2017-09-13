@@ -336,6 +336,7 @@ class Siamese_Loader:
         self.n_classes = Xtrain.shape[0]
         self.feature_size = (Xtrain[0].shape)[1]
         self.n_examples = np.array([x.shape[0] for x in Xtrain])
+        self.n_tot_examples = np.sum(self.n_examples)
         print 'examples of different classes: %s' % str(self.n_examples)
         # self.n_val,self.n_ex_val,_,_ = Xval.shape
 
@@ -357,31 +358,18 @@ class Siamese_Loader:
             pairs[1][i] = self.Xtrain[category_2][idx_2] #.reshape(self.w,self.h,1)
         return pairs, targets
 
-    def make_oneshot_task(self,N):
-        #Create pairs of test image, support set for testing N way one-shot learning.
-        categories = rng.choice(self.n_val,size=(N,),replace=False)
-        indices = rng.randint(0,self.n_ex_val,size=(N,))
-        true_category = categories[0]
-        ex1, ex2 = rng.choice(self.n_examples,replace=False,size=(2,))
-        test_image = np.asarray([self.Xval[true_category,ex1,:,:]]*N).reshape(N,self.w,self.h,1)
-        support_set = self.Xval[categories,indices,:,:]
-        support_set[0,:,:] = self.Xval[true_category,ex2]
-        support_set = support_set.reshape(N,self.w,self.h,1)
-        pairs = [test_image,support_set]
-        targets = np.zeros((N,))
-        targets[0] = 1
-        return pairs, targets
-
-    def test_oneshot(self,model,N,k,verbose=0):
-        #Test average N way oneshot learning accuracy of a siamese neural net over k one-shot tasks
-        n_correct = 0
-        for i in range(k):
-            inputs, targets = self.make_oneshot_task(N)
-            probs = model.predict(inputs)
-            if np.argmax(probs) == 0:
-                n_correct+=1
-        percent_correct = (100.0*n_correct / k)
-        return percent_correct
+    def gen_test_on_support_data(self):
+        """
+        """
+        for valide_feature in Xval:
+            pairs = np.zeros((2, self.n_tot_examples, self.feature_size))
+            pairs[0] = valide_feature
+            i_ = 0
+            for class_features in Xtrain:
+                for train_feature in class_features:
+                    pairs[1, i_] = train_feature
+                    i_ += 1
+            yield return pairs
 
 
 def siamese_train():
@@ -397,9 +385,16 @@ def siamese_train():
     print "train data shape before gen pair"
     print train_data.shape
     siamese_data_loader = Siamese_Loader(train_data)
-    pairs, targets = siamese_data_loader.get_batch(100000)
+    pairs, targets = siamese_data_loader.get_batch(100)
     return pairs, targets
 
+def siamese_test(model, siamese_loader):
+    """
+    """
+    for valide_pair in siamese_loader.gen_test_on_support_data():
+        preds = model.predict(valide_pair, batch_size=BATCH_SIZE, verbose=2)
+        print preds.shape
+        exit(0)
 
 def keras_train(nfolds = 10):
     """
@@ -486,6 +481,7 @@ def gen_sub(models):
 
 if __name__ == "__main__":
     model_k = keras_train(10)
+    siamese_test()
     # gen_sub(model_k, 'k', th, F1)
     # xgbTrain();
     #model_l = lgbm_train(10)#model_k)
