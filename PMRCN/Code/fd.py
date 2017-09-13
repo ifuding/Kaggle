@@ -22,9 +22,9 @@ from keras import backend as K
 from sklearn.metrics import log_loss
 from keras import __version__ as keras_version
 
-HIDDEN_UNITS = [128, 32]
+HIDDEN_UNITS = [32, 16]
 DNN_EPOCHS = 40
-BATCH_SIZE = 5
+BATCH_SIZE = 100
 DNN_BN = True
 DROPOUT_RATE = 0
 
@@ -327,28 +327,34 @@ def create_siamese_net(input_size):
     siamese_net.count_params()
     return siamese_net
 
+
 class Siamese_Loader:
     #For loading batches and testing tasks to a siamese net
     def __init__(self,Xtrain,Xval = None):
         self.Xval = Xval
         self.Xtrain = Xtrain
-        self.n_classes, self.n_examples,self.feature_size = Xtrain.shape
+        self.n_classes = Xtrain.shape[0]
+        self.feature_size = (Xtrain[0].shape)[1]
+        self.n_examples = np.array([x.shape[0] for x in Xtrain])
+        print 'examples of different classes: %s' % str(self.n_examples)
         # self.n_val,self.n_ex_val,_,_ = Xval.shape
 
     def get_batch(self,n):
         #Create batch of pairs, half same class, half different class
-        categories = rng.choice(self.n_classes,size=(n,),replace=False)
-        pairs=[np.zeros((n, self.feature_size)) for i in range(2)]
+        categories = rng.choice(self.n_classes,size=(n,),replace=True)
+        pairs=np.zeros((2, n, self.feature_size))
         targets=np.zeros((n,))
         targets[n//2:] = 1
         for i in range(n):
             category = categories[i]
-            idx_1 = rng.randint(0,self.n_examples)
-            pairs[0][i,:] = self.Xtrain[category,idx_1] #.reshape(self.feature_size)
-            idx_2 = rng.randint(0,self.n_examples)
+            idx_1 = rng.randint(0, self.n_examples[category])
+            pairs[0][i] = self.Xtrain[category][idx_1] #.reshape(self.feature_size)
             #pick images of same class for 1st half, different for 2nd
             category_2 = category if i >= n//2 else (category + rng.randint(1,self.n_classes)) % self.n_classes
-            pairs[1][i,:] = self.Xtrain[category_2,idx_2] #.reshape(self.w,self.h,1)
+            idx_2 = rng.randint(0,self.n_examples[category_2])
+            while i >= n //2 and idx_2 == idx_1:
+                idx_2 = rng.randint(0,self.n_examples[category_2])
+            pairs[1][i] = self.Xtrain[category_2][idx_2] #.reshape(self.w,self.h,1)
         return pairs, targets
 
     def make_oneshot_task(self,N):
@@ -385,16 +391,9 @@ def siamese_train():
     i = 0
     for feature in train:
         train_data[y[i]].append(feature)
-        # np.insert(train_data[y[i]], 0, feature, axis = 0)
         i += 1
-    for i in range(9):
-    #    train_data[i] = np.array(train_data[i])
-        print len(train_data[i])
     print 'i = %d' % i
     train_data = np.array([np.array(xi) for xi in train_data])
-    for i in range(9):
-    #    train_data[i] = np.array(train_data[i])
-        print type(train_data[i])
     print "train data shape before gen pair"
     print train_data.shape
     siamese_data_loader = Siamese_Loader(train_data)
@@ -421,10 +420,15 @@ def keras_train(nfolds = 10):
         # model = create_embedding_model((train_data.shape)[1])
         model = create_siamese_net((train.shape)[1])
 
-        X_train = train_data[train_index]
+        X_train = list(train_data[:, train_index])
         Y_train = train_target[train_index]
-        X_valid = train_data[test_index]
+        print 'Positive samples in train: %d' % np.sum(Y_train)
+        print 'Negative samples in train: %d' % (len(Y_train) - np.sum(Y_train))
+
+        X_valid = list(train_data[:, test_index])
         Y_valid = train_target[test_index]
+        print 'Positive samples in valide: %d' % np.sum(Y_valid)
+        print 'Negative samples in valide: %d' % (len(Y_valid) - np.sum(Y_valid))
 
         num_fold += 1
         print('Start KFold number {} from {}'.format(num_fold, nfolds))
@@ -434,8 +438,8 @@ def keras_train(nfolds = 10):
         callbacks = [
             EarlyStopping(monitor='val_loss', patience=3, verbose=0),
         ]
-        model.fit([X_train], Y_train, batch_size=BATCH_SIZE, epochs=DNN_EPOCHS,
-                shuffle=True, verbose=2, validation_data=([X_valid], Y_valid)
+        model.fit(X_train, Y_train, batch_size=BATCH_SIZE, epochs=DNN_EPOCHS,
+                shuffle=True, verbose=2, validation_data=(X_valid, Y_valid)
                 , callbacks=callbacks)
 
         models.append((model, 'k'))
