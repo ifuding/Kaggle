@@ -7,6 +7,8 @@ import xgboost as xgb
 import lightgbm as lgb
 from time import gmtime, strftime
 import numpy.random as rng
+from multiprocessing.dummy import Pool
+import h5py
 
 from sklearn.cross_validation import KFold
 from keras.models import Sequential, Model
@@ -24,7 +26,7 @@ from keras import __version__ as keras_version
 
 HIDDEN_UNITS = [32, 16]
 DNN_EPOCHS = 40
-BATCH_SIZE = 500
+BATCH_SIZE = 200
 DNN_BN = True
 DROPOUT_RATE = 0
 
@@ -134,7 +136,7 @@ pid = test['ID'].values
 #exit(0)
 train = np.load("./train_array.npy")
 test = np.load("./test_array.npy")
-siamese_features_array = np.load("./siamese_features_array.npy")
+# siamese_features_array = np.load("./siamese_features_array.npy")
 y = y - 1 #fix for zero bound array
 
 CONTINUOUS_INDICES = []
@@ -151,6 +153,8 @@ test = test[:, CONTINUOUS_INDICES]
 print train.shape
 #train = train[:200]
 #y = y[:200]
+#test = test[:200]
+#pid = pid[:200]
 
 def xgbTrain(flod = 5):
     """
@@ -185,7 +189,7 @@ def lgbm_train(fold = 5, siamese_features_array = None):
     """
     print train.shape
     print siamese_features_array.shape
-    train_merge = train #np.concatenate((train, siamese_features_array), axis = 1)
+    train_merge = siamese_features_array #np.concatenate((train, siamese_features_array), axis = 1)
     print train_merge.shape
     # exit(0)
     train_len = len(train)
@@ -233,20 +237,20 @@ def lgbm_train(fold = 5, siamese_features_array = None):
         # ROUNDS = 1
         print 'fold: %d th light GBM train :-)' % (i)
         # params['feature_fraction_seed'] = i
-       # bst = lgb.train(
-       #                 params ,
-       #                 d_train,
-       #                 verbose_eval = False
-       #                 # valid_sets = [d_valide]
-       #                 #num_boost_round = 1
-       #                 )
-        cv_result = lgb.cv(params, d_train, nfold=10)
-        pd.DataFrame(cv_result).to_csv('cv_result', index = False)
-        exit(0)
+        bst = lgb.train(
+                        params ,
+                        d_train,
+                        verbose_eval = False
+                        # valid_sets = [d_valide]
+                        #num_boost_round = 1
+                        )
+       # cv_result = lgb.cv(params, d_train, nfold=10)
+       # pd.DataFrame(cv_result).to_csv('cv_result', index = False)
+       # exit(0)
         # pred = model_eval(bst, 'l', test)
         #print pred.shape
         #print pred[0, :]
-        # models.append((bst, 'l'))
+        models.append((bst, 'l'))
 
     return models
 
@@ -364,18 +368,16 @@ class Siamese_Loader:
             pairs[1][i] = self.Xtrain[category_2][idx_2] #.reshape(self.w,self.h,1)
         return pairs, targets
 
-    def gen_test_on_support_data(self, Xtest):
-        """
-        """
-        for valide_feature in Xtest:
-            pairs = np.zeros((2, self.n_tot_examples, self.feature_size))
-            pairs[0] = valide_feature
-            i_ = 0
-            for class_features in self.Xtrain:
-                for train_feature in class_features:
-                    pairs[1, i_] = train_feature
-                    i_ += 1
-            yield list(pairs)
+
+def gen_test_on_support_data(Xsupport, Xtest):
+    """
+    """
+    n_support, feature_size = Xsupport.shape
+    for valide_feature in Xtest:
+        pairs = np.zeros((2, n_support, feature_size))
+        pairs[0] = valide_feature
+        pairs[1] = Xsupport
+        yield list(pairs)
 
 
 # siamese_data_loader = None
@@ -396,21 +398,53 @@ def siamese_train():
     pairs, targets = siamese_data_loader.get_batch(100000)
     return pairs, targets, siamese_data_loader
 
-def siamese_test(model, siamese_loader, Xtest):
+def siamese_test_meta(xtest):
     """
     """
     siamese_features_array = []
     i_ = 0
-    for valide_pair in siamese_loader.gen_test_on_support_data(Xtest):
-        if i_ % 100 == 0:
-            print 'Gen %d siamese_features' % i_
-        i_ += 1
-        preds = model.predict(valide_pair, batch_size=1000, verbose=2)
+    for valide_pair in gen_test_on_support_data(train, Xtest):
+        preds = model.predict(valide_pair, batch_size=BATCH_SIZE, verbose=2)
         preds = np.insert(preds, 1, y, axis = 1)
         preds = pd.DataFrame(preds, columns = ['sim', 'class'])
+        ## drop same pair in training
+        if i_ % 100 == 0:
+            print 'Gen %d siamese_features' % i_
+        if np.array_equal(Xtest, train):
+            if i_ % 400 == 0:
+                print preds.iloc[i_]
+            preds.drop(preds.index[0], inplace = True)
+            if i_ % 400 == 0:
+                print preds.iloc[i_]
         siamese_features = preds.groupby('class', sort = False) \
                 .agg({'sim': ['max', 'min', 'median', 'mean', 'std']})
         siamese_features_array.append(siamese_features.values.flatten())
+        i_ += 1
+
+    return np.array(siamese_features_array)
+
+def siamese_test(model, Xtest):
+    """
+    """
+    siamese_features_array = []
+    i_ = 0
+    for valide_pair in gen_test_on_support_data(train, Xtest):
+        preds = model.predict(valide_pair, batch_size=BATCH_SIZE, verbose=2)
+        preds = np.insert(preds, 1, y, axis = 1)
+        preds = pd.DataFrame(preds, columns = ['sim', 'class'])
+        ## drop same pair in training
+        if i_ % 100 == 0:
+            print 'Gen %d siamese_features' % i_
+        if np.array_equal(Xtest, train):
+            if i_ % 400 == 0:
+                print preds.iloc[i_]
+            preds.drop(preds.index[0], inplace = True)
+            if i_ % 400 == 0:
+                print preds.iloc[i_]
+        siamese_features = preds.groupby('class', sort = False) \
+                .agg({'sim': ['max', 'min', 'median', 'mean', 'std']})
+        siamese_features_array.append(siamese_features.values.flatten())
+        i_ += 1
 
     return np.array(siamese_features_array)
 
@@ -455,7 +489,9 @@ def keras_train(nfolds = 10):
                 shuffle=True, verbose=2, validation_data=(X_valid, Y_valid)
                 , callbacks=callbacks)
 
-        siamese_features_array = siamese_test(model, siamese_data_loader, train)
+        model_name = 'keras' + strftime('_%Y_%m_%d_%H_%M_%S', gmtime())
+        model.save_weights(model_name)
+        siamese_features_array = siamese_test(model, train)
         models.append((model, 'k'))
         break
 
@@ -477,14 +513,14 @@ def model_eval(model, model_type, data_frame):
     return preds
 
 
-def gen_sub(models):
+def gen_sub(models, merge_features):
     """
     Evaluate single Type model
     """
     print('Start generate submission!')
     preds = None
     for (model, model_type) in models:
-        pred = model_eval(model, model_type, test)
+        pred = model_eval(model, model_type, merge_features)
         #print pred.shape
         #print pred[0, :]
         if preds is None:
@@ -500,10 +536,14 @@ def gen_sub(models):
     submission.to_csv(sub_name, index=False)
 
 if __name__ == "__main__":
-    # model_k, siamese_features_array = keras_train(10)
-    # np.save("siamese_features_array", siamese_features_array)
+    model_k, siamese_features_array = keras_train(10)
+    np.save("siamese_features_array" + \
+            strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) , siamese_features_array)
     # gen_sub(model_k, 'k', th, F1)
     # xgbTrain();
     model_l = lgbm_train(10, siamese_features_array)#model_k)
+    siamese_features_test_array = siamese_test(model_k[0][0], test)
+    np.save("siamese_features_test_array" + \
+            strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) , siamese_features_test_array)
     #model_x = xgbTrain(5)#model_k)
-    # gen_sub(model_k) #model_k)
+    gen_sub(model_l, siamese_features_test_array) #model_k)
