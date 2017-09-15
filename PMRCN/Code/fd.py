@@ -9,6 +9,7 @@ from time import gmtime, strftime
 import numpy.random as rng
 from multiprocessing.dummy import Pool
 import h5py
+import concurrent.futures
 
 from sklearn.cross_validation import KFold
 from keras.models import Sequential, Model
@@ -24,11 +25,13 @@ from keras import backend as K
 from sklearn.metrics import log_loss
 from keras import __version__ as keras_version
 
-HIDDEN_UNITS = [32, 16]
-DNN_EPOCHS = 40
+HIDDEN_UNITS = [32, 16, 8]
+DNN_EPOCHS = 2
 BATCH_SIZE = 200
 DNN_BN = True
 DROPOUT_RATE = 0
+SIAMESE_PAIR_SIZE = 200000
+MAX_WORKERS = 4
 
 full_feature = True
 
@@ -136,7 +139,7 @@ pid = test['ID'].values
 #exit(0)
 train = np.load("./train_array.npy")
 test = np.load("./test_array.npy")
-siamese_features_array = np.load("./siamese_features_array_2017_09_14_16_42_25.npy")
+siamese_features_array = np.load("./siamese_features_array_2017_09_15_07_57_44.npy")
 y = y - 1 #fix for zero bound array
 
 CONTINUOUS_INDICES = []
@@ -150,7 +153,7 @@ for i in range((train.shape)[1]):
 train = train[:, CONTINUOUS_INDICES]
 test = test[:, CONTINUOUS_INDICES]
 
-print train.shape
+print 'train shape after loading and selecting trainging columns: %s' % str(train.shape)
 
 siamese_train_len = len(train) / 3
 siamese_train_data = train[:siamese_train_len]
@@ -164,7 +167,7 @@ lgbm_train_label = y[siamese_train_len:]
 #test = test[:200]
 #pid = pid[:200]
 
-def xgbTrain(flod = 5):
+def xgbTrain(train_data, train_label, flod = 5):
     """
     """
     denom = 0
@@ -180,7 +183,7 @@ def xgbTrain(flod = 5):
             'seed': i,
             'silent': True
         }
-        x1, x2, y1, y2 = model_selection.train_test_split(train, y, test_size=0.18, random_state=i)
+        x1, x2, y1, y2 = model_selection.train_test_split(train_data, train_label, test_size=0.18, random_state=i)
         watchlist = [(xgb.DMatrix(x1, y1), 'train'), (xgb.DMatrix(x2, y2), 'valid')]
         model = xgb.train(params, xgb.DMatrix(x1, y1), 1000,  watchlist, verbose_eval=50, early_stopping_rounds=100)
         score1 = metrics.log_loss(y2, model.predict(xgb.DMatrix(x2), ntree_limit=model.best_ntree_limit), labels = list(range(9)))
@@ -333,7 +336,8 @@ def create_siamese_net(input_size):
     #merge two encoded inputs with the l1 distance between them
     L1_distance = lambda x: K.abs(x[0]-x[1])
     both = merge([encoded_l,encoded_r], mode = L1_distance, output_shape=lambda x: x[0])
-    prediction = Dense(1,activation='sigmoid')(both)
+    merge_layer = Dense(HIDDEN_UNITS[2],activation='sigmoid')(both)
+    prediction = Dense(1,activation='sigmoid')(merge_layer)
     siamese_net = Model(input=[left_input,right_input],output=prediction)
     #optimizer = SGD(0.0004,momentum=0.6,nesterov=True,decay=0.0003)
 
@@ -341,7 +345,7 @@ def create_siamese_net(input_size):
     #//TODO: get layerwise learning rates and momentum annealing scheme described in paperworking
     siamese_net.compile(loss="binary_crossentropy",optimizer=optimizer)
 
-    siamese_net.count_params()
+    print siamese_net.count_params()
     return siamese_net
 
 
@@ -362,17 +366,20 @@ class Siamese_Loader:
         categories = rng.choice(self.n_classes,size=(n,),replace=True)
         pairs=np.zeros((2, n, self.feature_size))
         targets=np.zeros((n,))
-        targets[n//2:] = 1
+        positive_begin_pos = n * 1 / 2
+        targets[positive_begin_pos:] = 1
         for i in range(n):
             category = categories[i]
             idx_1 = rng.randint(0, self.n_examples[category])
             pairs[0][i] = self.Xtrain[category][idx_1] #.reshape(self.feature_size)
             #pick images of same class for 1st half, different for 2nd
-            category_2 = category if i >= n//2 else (category + rng.randint(1,self.n_classes)) % self.n_classes
+            category_2 = category if i >= positive_begin_pos else (category + rng.randint(1,self.n_classes)) % self.n_classes
             idx_2 = rng.randint(0,self.n_examples[category_2])
-            while i >= n //2 and idx_2 == idx_1:
+            while i >= positive_begin_pos and idx_2 == idx_1:
                 idx_2 = rng.randint(0,self.n_examples[category_2])
             pairs[1][i] = self.Xtrain[category_2][idx_2] #.reshape(self.w,self.h,1)
+        # shuflle pairs to mix positive and negative
+        rng.shuffle(pairs)
         return pairs, targets
 
 
@@ -402,35 +409,49 @@ def siamese_train(siamese_train_data, siamese_train_label):
     print "train data shape before gen pair"
     print train_data.shape
     siamese_data_loader = Siamese_Loader(train_data, test)
-    pairs, targets = siamese_data_loader.get_batch(100000)
+    pairs, targets = siamese_data_loader.get_batch(SIAMESE_PAIR_SIZE)
     return pairs, targets, siamese_data_loader
+
+
+def gen_siamese_features_meta(model, siamese_pair, Xsupport_label):
+    """
+    """
+    preds = model.predict(valide_pair, batch_size=BATCH_SIZE, verbose=2)
+    preds = np.insert(preds, 1, Xsupport_label, axis = 1)
+    preds = pd.DataFrame(preds, columns = ['sim', 'class'])
+    siamese_features = preds.groupby('class', sort = False) \
+            .agg({'sim': ['max', 'min', 'median', 'mean', 'std']})
+
+    return siamese_features
 
 
 def gen_siamese_features(model, Xtest, Xsupport, Xsupport_label):
     """
     """
-    siamese_features_array = []
+    if MAX_WORKERS <= 0:
+        print >> stderr, "MAX_WORKERS should >= 1"
+        exit(1)
+    siamese_features_array = range(len(Xtest))
     i_ = 0
-    is_test_equal_train = np.array_equal(Xtest, Xsupport)
+    valide_pair_list = []
     for valide_pair in gen_test_on_support_data(Xsupport, Xtest):
-        preds = model.predict(valide_pair, batch_size=BATCH_SIZE, verbose=2)
-        preds = np.insert(preds, 1, Xsupport_label, axis = 1)
-        preds = pd.DataFrame(preds, columns = ['sim', 'class'])
-        ## drop same pair in training
-        if i_ % 100 == 0:
-            print 'Gen %d siamese_features' % i_
-        if is_test_equal_train:
-            if i_ % 400 == 0:
-                print preds.iloc[i_]
-            preds.drop(preds.index[0], inplace = True)
-            if i_ % 400 == 0:
-                print preds.iloc[i_]
-        siamese_features = preds.groupby('class', sort = False) \
-                .agg({'sim': ['max', 'min', 'median', 'mean', 'std']})
-        siamese_features_array.append(siamese_features.values.flatten())
-        i_ += 1
-
+        if len(valide_pair_list) < MAX_WORKERS:
+            valide_pair_list.append(valide_pair)
+        if len(valide_pair_list) == MAX_WORKERS:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                future_predict = {executor.submit(gen_siamese_features_meta, model, \
+                        valide_pair_list[i], Xsupport_label): i for i in range(MAX_WORKERS)}
+                for future in concurrent.futures.as_completed(future_predict):
+                    ind = future_predict[future]
+                    try:
+                        siamese_features = future.result()
+                        siamese_features_array[i_ + ind] = siamese_features
+                    except Exception as exc:
+                        print('%dth feature generated an exception: %s' % (i_ + ind, exc))
+            valide_pair_list = []
+            i_ += MAX_WORKERS
     return np.array(siamese_features_array)
+
 
 def keras_train(nfolds = 10):
     """
@@ -520,12 +541,14 @@ def gen_sub(models, merge_features):
     submission.to_csv(sub_name, index=False)
 
 if __name__ == "__main__":
-    #model_k, siamese_features_array = keras_train(10)
-    #np.save("siamese_features_array" + \
-    #        strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) , siamese_features_array)
+    model_k, siamese_features_array = keras_train(10)
+    np.save("siamese_features_array" + \
+            strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) , siamese_features_array)
     # gen_sub(model_k, 'k', th, F1)
-    # xgbTrain();
-    model_l = lgbm_train(np.concatenate((lgbm_train_data, siamese_features_array), axis = 1), lgbm_train_label, 10)#model_k)
+    # ind = np.array([i * 5 for i in range(9)])
+    # xgbTrain(siamese_features_array[:, ind], lgbm_train_label);
+    lgbm_features = siamese_features_array #np.concatenate((lgbm_train_data, siamese_features_array),
+    model_l = lgbm_train(lgbm_features, lgbm_train_label, 10)#model_k)
     # siamese_features_test_array = siamese_test(model_k[0][0], test)
     #np.save("siamese_features_test_array" + \
     #        strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) , siamese_features_test_array)
