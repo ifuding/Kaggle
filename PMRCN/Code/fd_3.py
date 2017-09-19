@@ -30,12 +30,12 @@ from keras import __version__ as keras_version
 graph = tf.get_default_graph()
 
 HIDDEN_UNITS = [32, 16, 8]
-DNN_EPOCHS = 6
+DNN_EPOCHS = 20
 BATCH_SIZE = 200
 DNN_BN = True
 DROPOUT_RATE = 0
 SIAMESE_PAIR_SIZE = 100000
-MAX_WORKERS = 6
+MAX_WORKERS = 3
 
 full_feature = True
 
@@ -165,7 +165,6 @@ siamese_train_label = y[:siamese_train_len]
 
 lgbm_train_data = train[siamese_train_len:]
 lgbm_train_label = y[siamese_train_len:]
-
 #train = train[:200]
 #y = y[:200]
 #test = test[:200]
@@ -424,20 +423,9 @@ def gen_siamese_features_meta(model, Xsupport_label, Xsupport, Xtest):
     preds = pd.DataFrame(preds, columns = ['sim', 'class'])
     siamese_features = preds.groupby('class', sort = False) \
             .agg({'sim': ['max', 'min', 'median', 'mean', 'std']})
-
-    return siamese_features.values.flatten()
-
-def gen_siamese_features_from_predict_meta(preds, Xsupport_label, output = None):
-    """
-    """
-    preds = np.insert(preds, 1, Xsupport_label, axis = 1)
-    preds = pd.DataFrame(preds, columns = ['sim', 'class'])
-    siamese_features = preds.groupby('class', sort = False) \
-            .agg({'sim': ['max', 'min', 'median', 'mean', 'std']})
-
-    # return siamese_features.values.flatten()
-    output.put(siamese_features.values.flatten())
-    # output.put("stop")
+    max_class = siamese_features['sim']['max'].idxmax()
+    siamese_features = np.insert(siamese_features.values.flatten(), 0, max_class, axis = 0)
+    return siamese_features
 
 def gen_siamese_features(siamese_model, Xtest, Xsupport, Xsupport_label):
     """
@@ -467,7 +455,9 @@ def gen_siamese_features(siamese_model, Xtest, Xsupport, Xsupport_label):
     if test_begin != len(Xtest):
         print("Only gen %d siamese features" % test_begin, file=sys.stderr)
         exit(1)
-    return np.array(siamese_features_array)
+    siamese_features_array = np.array(siamese_features_array)
+    pd.DataFrame(siamese_features_array[:, 0]).astype(np.int8).tocsv('pred_label', index = False)
+    return siamese_features_array
 
 
 def keras_train(nfolds = 10):
