@@ -11,6 +11,7 @@ from multiprocessing.dummy import Pool
 import h5py
 import concurrent.futures
 import tensorflow as tf
+import multiprocessing as mp
 
 from sklearn.cross_validation import KFold
 from keras.models import Sequential, Model
@@ -29,12 +30,12 @@ from keras import __version__ as keras_version
 graph = tf.get_default_graph()
 
 HIDDEN_UNITS = [32, 16, 8]
-DNN_EPOCHS = 2
+DNN_EPOCHS = 6
 BATCH_SIZE = 200
 DNN_BN = True
 DROPOUT_RATE = 0
-SIAMESE_PAIR_SIZE = 20000
-MAX_WORKERS = 8
+SIAMESE_PAIR_SIZE = 100000
+MAX_WORKERS = 6
 
 full_feature = True
 
@@ -390,14 +391,11 @@ def gen_test_on_support_data(Xsupport, Xtest):
     """
     """
     n_support, feature_size = Xsupport.shape
-    for valide_feature in Xtest:
-        pairs = np.zeros((2, n_support, feature_size))
-        pairs[0] = valide_feature
-        pairs[1] = Xsupport
-        yield list(pairs)
+    pairs = np.zeros((2, n_support, feature_size))
+    pairs[0] = Xtest
+    pairs[1] = Xsupport
+    return list(pairs)
 
-
-# siamese_data_loader = None
 
 def siamese_train(siamese_train_data, siamese_train_label):
     """
@@ -414,9 +412,11 @@ def siamese_train(siamese_train_data, siamese_train_label):
     pairs, targets = siamese_data_loader.get_batch(SIAMESE_PAIR_SIZE)
     return pairs, targets, siamese_data_loader
 
-def gen_siamese_features_meta(model, siamese_pair, Xsupport_label):
+
+def gen_siamese_features_meta(model, Xsupport_label, Xsupport, Xtest):
     """
     """
+    siamese_pair = gen_test_on_support_data(Xsupport, Xtest)
     global graph
     with graph.as_default():
         preds = model.predict(siamese_pair, batch_size=BATCH_SIZE, verbose=2)
@@ -425,8 +425,19 @@ def gen_siamese_features_meta(model, siamese_pair, Xsupport_label):
     siamese_features = preds.groupby('class', sort = False) \
             .agg({'sim': ['max', 'min', 'median', 'mean', 'std']})
 
-    return siamese_features
+    return siamese_features.values.flatten()
 
+def gen_siamese_features_from_predict_meta(preds, Xsupport_label, output = None):
+    """
+    """
+    preds = np.insert(preds, 1, Xsupport_label, axis = 1)
+    preds = pd.DataFrame(preds, columns = ['sim', 'class'])
+    siamese_features = preds.groupby('class', sort = False) \
+            .agg({'sim': ['max', 'min', 'median', 'mean', 'std']})
+
+    # return siamese_features.values.flatten()
+    output.put(siamese_features.values.flatten())
+    # output.put("stop")
 
 def gen_siamese_features(siamese_model, Xtest, Xsupport, Xsupport_label):
     """
@@ -435,35 +446,26 @@ def gen_siamese_features(siamese_model, Xtest, Xsupport, Xsupport_label):
         print("MAX_WORKERS should >= 1", file=sys.stderr)
         exit(1)
     siamese_features_array = list(range(len(Xtest)))
-    i_ = 0
-    valide_pair_list = []
-    for valide_pair in gen_test_on_support_data(Xsupport, Xtest):
-        #siamese_features = gen_siamese_features_meta(siamese_model, valide_pair, Xsupport_label)
-        ## siamese_features_array.append(siamese_features)
-        #continue
-        if len(valide_pair_list) < MAX_WORKERS:
-            valide_pair_list.append(valide_pair)
-        if len(valide_pair_list) == MAX_WORKERS:
-            with concurrent.futures.ThreadPoolExecutor(max_workers = MAX_WORKERS) as executor:
-                future_predict = {executor.submit(gen_siamese_features_meta, siamese_model, \
-                        valide_pair_list[i], Xsupport_label): i for i in range(MAX_WORKERS)}
-                for future in concurrent.futures.as_completed(future_predict):
-                    ind = future_predict[future]
-                    try:
-                        siamese_features = future.result()
-                        siamese_features_array[i_ + ind] = siamese_features
-                    except Exception as exc:
-                        print('%dth feature generated an exception: %s' % (i_ + ind, exc))
-            valide_pair_list = []
-            i_ += MAX_WORKERS
-            if i_ % 400 == 0:
-                print('Gen %d siamsese features' % i_)
-    for valide_pair in valide_pair_list:
-        siamese_features = gen_siamese_features_meta(siamese_model, valide_pair, Xsupport_label)
-        siamese_features_array[i_] = siamese_features
-        i_ += 1
-    if i_ != len(Xtest):
-        print("Only gen %d siamese features" % i_, file=sys.stderr)
+    test_begin = 0
+    while test_begin < len(Xtest):
+        test_end = min(test_begin + MAX_WORKERS, len(Xtest))
+        with concurrent.futures.ThreadPoolExecutor(max_workers = MAX_WORKERS) as executor:
+            future_predict = {executor.submit(gen_siamese_features_meta, siamese_model,
+                        Xsupport_label,
+                        Xsupport,
+                        Xtest[ind]): ind for ind in range(test_begin, test_end)}
+            for future in concurrent.futures.as_completed(future_predict):
+                ind = future_predict[future]
+                try:
+                    siamese_features = future.result()
+                    siamese_features_array[ind] = siamese_features
+                except Exception as exc:
+                    print('%dth feature generated an exception: %s' % (ind, exc))
+        test_begin = test_end
+        if test_begin % 100 == 0:
+            print('Gen %d siamsese features' % test_begin)
+    if test_begin != len(Xtest):
+        print("Only gen %d siamese features" % test_begin, file=sys.stderr)
         exit(1)
     return np.array(siamese_features_array)
 
