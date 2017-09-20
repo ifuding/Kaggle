@@ -30,12 +30,12 @@ from keras import __version__ as keras_version
 graph = tf.get_default_graph()
 
 HIDDEN_UNITS = [32, 16, 8]
-DNN_EPOCHS = 20
+DNN_EPOCHS = 40
 BATCH_SIZE = 200
 DNN_BN = True
 DROPOUT_RATE = 0
 SIAMESE_PAIR_SIZE = 100000
-MAX_WORKERS = 3
+MAX_WORKERS = 8
 
 full_feature = True
 
@@ -371,6 +371,7 @@ class Siamese_Loader:
         targets=np.zeros((n,))
         positive_begin_pos = n * 1 // 2
         targets[positive_begin_pos:] = 1
+        categories_list = []
         for i in range(n):
             category = categories[i]
             idx_1 = rng.randint(0, self.n_examples[category])
@@ -381,6 +382,9 @@ class Siamese_Loader:
             while i >= positive_begin_pos and idx_2 == idx_1:
                 idx_2 = rng.randint(0,self.n_examples[category_2])
             pairs[1][i] = self.Xtrain[category_2][idx_2] #.reshape(self.w,self.h,1)
+            categories_list.append((category, category_2))
+        #pd.DataFrame(categories_list).to_csv('categories', index=False)
+        #exit(0)
         # shuflle pairs to mix positive and negative
         rng.shuffle(pairs)
         return pairs, targets
@@ -456,7 +460,7 @@ def gen_siamese_features(siamese_model, Xtest, Xsupport, Xsupport_label):
         print("Only gen %d siamese features" % test_begin, file=sys.stderr)
         exit(1)
     siamese_features_array = np.array(siamese_features_array)
-    pd.DataFrame(siamese_features_array[:, 0]).astype(np.int8).tocsv('pred_label', index = False)
+    pd.DataFrame(siamese_features_array[:, 0]).astype(np.int8).to_csv('pred_label', index = False)
     return siamese_features_array
 
 
@@ -495,7 +499,7 @@ def keras_train(nfolds = 10):
         print('Split valid: ', len(X_valid), len(Y_valid))
 
         callbacks = [
-            EarlyStopping(monitor='val_loss', patience=3, verbose=0),
+            EarlyStopping(monitor='val_loss', patience=2, verbose=0),
         ]
         model.fit(X_train, Y_train, batch_size=BATCH_SIZE, epochs=DNN_EPOCHS,
                 shuffle=True, verbose=2, validation_data=(X_valid, Y_valid)
