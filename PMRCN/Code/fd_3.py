@@ -232,14 +232,14 @@ def lgbm_train(train_data, train_label, fold = 5):
           #  'feature_fraction': 0.9,
           #  'bagging_fraction': 0.95,
           #  'bagging_freq': 5,
-            'num_leaves': 60, # 60,
+            'num_leaves': 10, # 60,
           #  'min_sum_hessian_in_leaf': 20,
-            'max_depth': 10, # 10,
-            'learning_rate': 0.02, # 0.02,
-            'feature_fraction': 0.5,
+            'max_depth': 4, # 10,
+            'learning_rate': 0.025, # 0.025,
+            'feature_fraction': 0.7, # 0.6
             'verbose': 0,
           #   'valid_sets': [d_valide],
-            'num_boost_round': 300,
+            'num_boost_round': 450,
             'feature_fraction_seed': i,
             # 'bagging_fraction': 0.9,
             # 'bagging_freq': 15,
@@ -251,16 +251,16 @@ def lgbm_train(train_data, train_label, fold = 5):
         }
 
         print('fold: %d th light GBM train :-)' % (i))
-        bst = lgb.train(
-                        params ,
-                        d_train,
-                        verbose_eval = False
-                        # valid_sets = [d_valide]
-                        #num_boost_round = 1
-                        )
-        #cv_result = lgb.cv(params, d_train, nfold=10)
-        #pd.DataFrame(cv_result).to_csv('cv_result', index = False)
-        # exit(0)
+       # bst = lgb.train(
+       #                 params ,
+       #                 d_train,
+       #                 verbose_eval = False
+       #                 # valid_sets = [d_valide]
+       #                 #num_boost_round = 1
+       #                 )
+        cv_result = lgb.cv(params, d_train, nfold=10)
+        pd.DataFrame(cv_result).to_csv('cv_result', index = False)
+        exit(0)
         models.append((bst, 'l'))
 
     return models
@@ -372,7 +372,7 @@ def keras_train(train_data, train_target, nfolds = 10):
         #model.save_weights(model_name)
         #siamese_features_array = gen_siamese_features(model, lgbm_train_data, siamese_train_data, siamese_train_label)
         models.append((model, 'k'))
-        break
+        # break
 
     return models #, siamese_features_array
 
@@ -416,8 +416,8 @@ def gen_sub(models, merge_features):
 
 
 if __name__ == "__main__":
-    model_k = keras_train(train, y, 10)
-    keras_preds = model_eval(model_k[0][0], model_k[0][1], gen_dnn_input(train))
+    #model_k = keras_train(train, y, 10)
+    #keras_preds = model_eval(model_k[0][0], model_k[0][1], gen_dnn_input(train))
     #for i in range(1, len(model_k)):
     #    keras_preds += model_eval(model_k[i][0], model_k[i][1], gen_dnn_input(train))
     #keras_preds /= len(model_k)
@@ -425,15 +425,15 @@ if __name__ == "__main__":
     #        strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) , keras_preds)
     #lgbm_features = siamese_features_array #np.concatenate((lgbm_train_data, siamese_features_array),
     # np.insert(test, keras_preds, axis = 1)
-    # keras_preds = np.load('keras_preds_2017_09_21_17_00_19.npy')
+    keras_preds = np.load('keras_preds_2017_09_22_10_16_14.npy')
     print(train.shape)
     print(keras_preds.shape)
     merge_train_data = np.concatenate((train, keras_preds), axis = 1)
-    # model_l = lgbm_train(np.concatenate((train, keras_preds), axis = 1), y, 10) #lgbm_features, lgbm_train_label, 10)#model_k)
-    model_x = xgbTrain(merge_train_data, y, 5)#model_k)
+    model_l = lgbm_train(merge_train_data, y, 10) #lgbm_features, lgbm_train_label, 10)#model_k)
+    #model_x = xgbTrain(merge_train_data, y, 5)#model_k)
 
-    keras_preds_test = model_eval(model_k[0][0], model_k[0][1], gen_dnn_input(test))
-    merge_test_data = np.concatenate((test, keras_preds_test), axis = 1)
+   # keras_preds_test = model_eval(model_k[0][0], model_k[0][1], gen_dnn_input(test))
+   # merge_test_data = np.concatenate((test, keras_preds_test), axis = 1)
     # siamese_features_test_array = siamese_test(model_k[0][0], test)
     #np.save("siamese_features_test_array" + \
     #        strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) , siamese_features_test_array)
