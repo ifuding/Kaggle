@@ -18,7 +18,7 @@ from keras.models import Sequential, Model
 from keras.layers.core import Dense, Dropout, Flatten, Reshape
 from keras.layers.normalization import BatchNormalization
 from keras.layers.embeddings import Embedding
-from keras.layers import Input, concatenate, merge
+from keras.layers import Input, concatenate, merge, LSTM
 from keras.layers.convolutional import Convolution2D, MaxPooling2D, ZeroPadding2D, AveragePooling2D
 from keras.optimizers import SGD, RMSprop, Adam
 from keras.callbacks import EarlyStopping
@@ -26,9 +26,10 @@ from keras.utils import np_utils
 from keras import backend as K
 from sklearn.metrics import log_loss
 from keras import __version__ as keras_version
+from keras.preprocessing.text import Tokenizer
+from keras.preprocessing.sequence import pad_sequences
 
-graph = tf.get_default_graph()
-
+# DNN_PARAMS
 HIDDEN_UNITS = [64, 32, 8]
 DNN_EPOCHS = 40
 BATCH_SIZE = 5
@@ -37,6 +38,12 @@ DROPOUT_RATE = 0.6
 SIAMESE_PAIR_SIZE = 100000
 MAX_WORKERS = 8
 EMBEDDING_SIZE = 6
+
+# RNN_PARAMS
+MAX_NUM_WORDS = 2000
+RNN_EMBEDDING_DIM = 10
+MAX_SEQUENCE_LEN = 1000
+LSTM_OUT = 32
 
 full_feature = True
 
@@ -52,6 +59,7 @@ train = pd.merge(train, trainx, how='left', on='ID').fillna('')
 #train = train.iloc[1:1000]
 y = train['Class'].values
 train = train.drop(['Class'], axis=1)
+train_text = train['Text'].values
 
 test = pd.merge(test, testx, how='left', on='ID').fillna('')
 pid = test['ID'].values
@@ -146,6 +154,14 @@ test = np.load("./test_array.npy")
 # siamese_features_array = np.load("./siamese_features_array_2017_09_15_07_57_44.npy")
 y = y - 1 #fix for zero bound array
 
+kf = KFold(len(y), n_folds=10, shuffle=True, random_state=1)
+for TRAIN_INDEX, TEST_INDEX in kf:
+    TRAIN_DATA = train[TRAIN_INDEX]
+    TRAIN_LABEL = y[TRAIN_INDEX]
+    VALIDE_DATA = train[TEST_INDEX]
+    VALIDE_LABEL = y[TEST_INDEX]
+    break
+
 CONTINUOUS_INDICES = []
 SPARSE_INDICES = []
 
@@ -200,26 +216,24 @@ def xgbTrain(train_data, train_label, fold = 5):
     return models
 
 
-def lgbm_train(train_data, train_label, fold = 5):
+def lgbm_train(train_data, train_label, fold = 5, valide_data = None, valide_label = None):
     """
     LGB Training
     """
-   # print train.shape
-   # print siamese_features_array.shape
-   # train_merge = siamese_features_array #np.concatenate((train, siamese_features_array), axis = 1)
-   # print train_merge.shape
-   # # exit(0)
     print("Over all training size:")
     print(train_data.shape)
-   # train_data = train_merge#[:train_len * 3 / 10]
-   # train_label = lgbm_train_label#[:train_len * 3 / 10]
-    #valide_data = train_merge[train_len * 9 / 10:]
-    #valide_label = y[train_len * 9 / 10:]
 
+    kf = KFold(len(train_label), n_folds=fold, shuffle=True)
+
+    num_fold = 0
     models = []
-    for i in range(fold):
-        d_train = lgb.Dataset(train_data, train_label) #, categorical_feature = SPARCE_INDICES)
-        #d_valide = lgb.Dataset(valide_data, valide_label)
+    for train_index, test_index in kf:
+        if valide_label is None:
+            d_train = lgb.Dataset(train_data[train_index], train_label[train_index]) #, categorical_feature = SPARCE_INDICES)
+            d_valide = lgb.Dataset(train_data[test_index], train_label[test_index])
+        else:
+            d_train = lgb.Dataset(train_data, train_label) #, categorical_feature = SPARCE_INDICES)
+            d_valide = lgb.Dataset(valide_data, valide_label)
 
         params = {
             'task': 'train',
@@ -232,34 +246,35 @@ def lgbm_train(train_data, train_label, fold = 5):
           #  'feature_fraction': 0.9,
           #  'bagging_fraction': 0.95,
           #  'bagging_freq': 5,
-            'num_leaves': 10, # 60,
+            'num_leaves': 60, # 60,
           #  'min_sum_hessian_in_leaf': 20,
-            'max_depth': 4, # 10,
-            'learning_rate': 0.025, # 0.025,
-            'feature_fraction': 0.7, # 0.6
+            'max_depth': 10, # 10,
+            'learning_rate': 0.028, # 0.025,
+           'feature_fraction': 0.5, # 0.6
             'verbose': 0,
           #   'valid_sets': [d_valide],
-            'num_boost_round': 450,
-            'feature_fraction_seed': i,
+            'num_boost_round': 405,
+            'feature_fraction_seed': num_fold,
             # 'bagging_fraction': 0.9,
             # 'bagging_freq': 15,
             # 'bagging_seed': i,
-            # 'early_stopping_round': 10
+            'early_stopping_round': 10,
             # 'random_state': 10
             # 'verbose_eval': 20
             #'min_data_in_leaf': 665
         }
 
-        print('fold: %d th light GBM train :-)' % (i))
-       # bst = lgb.train(
-       #                 params ,
-       #                 d_train,
-       #                 verbose_eval = False
-       #                 # valid_sets = [d_valide]
-       #                 #num_boost_round = 1
-       #                 )
-        cv_result = lgb.cv(params, d_train, nfold=10)
-        pd.DataFrame(cv_result).to_csv('cv_result', index = False)
+        print('fold: %d th light GBM train :-)' % (num_fold))
+        num_fold += 1
+        bst = lgb.train(
+                        params ,
+                        d_train,
+                        verbose_eval = 50,
+                        valid_sets = [d_valide]
+                        #num_boost_round = 1
+                        )
+        #cv_result = lgb.cv(params, d_train, nfold=10)
+        #pd.DataFrame(cv_result).to_csv('cv_result', index = False)
         exit(0)
         models.append((bst, 'l'))
 
@@ -325,17 +340,18 @@ def gen_dnn_input(input_array):
     return [input_array[:, CONTINUOUS_INDICES], input_array[:, SPARSE_INDICES]]
 
 
-def keras_train(train_data, train_target, nfolds = 10):
+def keras_train(train_data, train_label, nfolds = 10, valide_data = None, valide_label = None):
     """
     Detect Fish or noFish
     """
     print("Start gen training data, shuffle and normalize!")
 
     #train_data = train
-    train_target = np_utils.to_categorical(train_target)
-
-    # train_data, train_target, siamese_data_loader = siamese_train(siamese_train_data, siamese_train_label)
-    kf = KFold(len(train_target), n_folds=nfolds, shuffle=True)
+    train_label = np_utils.to_categorical(train_label)
+    if valide_label is not None:
+        valide_label = np_utils.to_categorical(valide_label)
+    # train_data, train_label, siamese_data_loader = siamese_train(siamese_train_data, siamese_train_label)
+    kf = KFold(len(train_label), n_folds=nfolds, shuffle=True)
 
     num_fold = 0
     models = []
@@ -344,13 +360,21 @@ def keras_train(train_data, train_target, nfolds = 10):
         model = create_embedding_model(len(CONTINUOUS_INDICES), len(SPARSE_INDICES))
         # model = create_siamese_net((train.shape)[1])
 
-        X_train = train_data[train_index]
-        Y_train = train_target[train_index]
+        if valide_data is None:
+            X_train = train_data[train_index]
+            Y_train = train_label[train_index]
+        else:
+            X_train = train_data
+            Y_train = train_label
         print('Positive samples in train: %d' % np.sum(Y_train))
         print('Negative samples in train: %d' % (len(Y_train) - np.sum(Y_train)))
 
-        X_valid = train_data[test_index]
-        Y_valid = train_target[test_index]
+        if valide_data is None:
+            X_valid = train_data[test_index]
+            Y_valid = train_label[test_index]
+        else:
+            X_valid = valide_data
+            Y_valid = valide_label
         print('Positive samples in valide: %d' % np.sum(Y_valid))
         print('Negative samples in valide: %d' % (len(Y_valid) - np.sum(Y_valid)))
 
@@ -366,6 +390,81 @@ def keras_train(train_data, train_target, nfolds = 10):
                 Y_train, batch_size=BATCH_SIZE, epochs=DNN_EPOCHS,
                 shuffle=True, verbose=2,
                 validation_data=(gen_dnn_input(X_valid), Y_valid)
+                , callbacks=callbacks)
+
+        model_name = 'keras' + strftime('_%Y_%m_%d_%H_%M_%S', gmtime())
+        #model.save_weights(model_name)
+        #siamese_features_array = gen_siamese_features(model, lgbm_train_data, siamese_train_data, siamese_train_label)
+        models.append((model, 'k'))
+        #if len(models) == 5:
+        #    break
+
+    return models #, siamese_features_array
+
+
+def gen_rnn_input(input_text, max_num_words, max_len):
+    """
+    Gen rnn input sequence
+    """
+    tokenizer = Tokenizer(num_words = max_num_words)
+    tokenizer.fit_on_texts(input_text)
+    # Pad the data
+    print("RNN: Convert text to indice sequence!")
+    output_sequences = tokenizer.texts_to_sequences(input_text)
+    output_sequences = pad_sequences(output_sequences, maxlen= max_len)
+    return output_sequences
+
+
+def create_rnn(input_sequence_size, max_num_words, embedding_dim, lstm_out):
+    """
+    """
+    model = Sequential()
+    model.add(Embedding(max_num_words, embedding_dim, input_length = input_sequence_size))
+    model.add(LSTM(lstm_out, recurrent_dropout=0.2, dropout=0.2))
+    model.add(Dense(9,activation='softmax'))
+    model.compile(loss = 'categorical_crossentropy', optimizer='adam', metrics = ['categorical_crossentropy'])
+    return model
+
+
+def rnn_train(train_data, train_label, fold = 5):
+    """
+    """
+    print("Start gen training data, shuffle and normalize!")
+
+    train_target = np_utils.to_categorical(train_label)
+
+    # train_data, train_target, siamese_data_loader = siamese_train(siamese_train_data, siamese_train_label)
+    kf = KFold(len(train_target), n_folds=fold, shuffle=True)
+
+    num_fold = 0
+    models = []
+    for train_index, test_index in kf:
+        # model = create_model(classes = 2)
+        model = create_rnn(MAX_SEQUENCE_LEN, MAX_NUM_WORDS, RNN_EMBEDDING_DIM, LSTM_OUT)
+        # model = create_siamese_net((train.shape)[1])
+
+        X_train = train_data[train_index]
+        Y_train = train_target[train_index]
+        print('Positive samples in train: %d' % np.sum(Y_train))
+        print('Negative samples in train: %d' % (len(Y_train) - np.sum(Y_train)))
+
+        X_valid = train_data[test_index]
+        Y_valid = train_target[test_index]
+        print('Positive samples in valide: %d' % np.sum(Y_valid))
+        print('Negative samples in valide: %d' % (len(Y_valid) - np.sum(Y_valid)))
+
+        num_fold += 1
+        print('Start KFold number {} from {}'.format(num_fold, fold))
+        print('Split train: ', len(X_train), len(Y_train))
+        print('Split valid: ', len(X_valid), len(Y_valid))
+
+        callbacks = [
+            EarlyStopping(monitor='val_loss', patience=3, verbose=0),
+        ]
+        model.fit(X_train,
+                Y_train, batch_size=BATCH_SIZE, epochs=DNN_EPOCHS,
+                shuffle=True, verbose=2,
+                validation_data=(X_valid, Y_valid)
                 , callbacks=callbacks)
 
         model_name = 'keras' + strftime('_%Y_%m_%d_%H_%M_%S', gmtime())
@@ -388,7 +487,18 @@ def model_eval(model, model_type, data_frame):
         print("ToDO")
     elif model_type == 'x':
         preds = model.predict(xgb.DMatrix(data_frame), ntree_limit=model.best_ntree_limit+80)
+    return preds
 
+
+def models_eval(models, data):
+    preds = None
+    for (model, model_type) in models:
+        pred = model_eval(model, model_type, data)
+        if preds is None:
+            preds = pred.copy()
+        else:
+            preds += pred
+    preds /= len(models)
     return preds
 
 
@@ -397,17 +507,7 @@ def gen_sub(models, merge_features):
     Evaluate single Type model
     """
     print('Start generate submission!')
-    preds = None
-    for (model, model_type) in models:
-        pred = model_eval(model, model_type, merge_features)
-        #print pred.shape
-        #print pred[0, :]
-        if preds is None:
-            preds = pred.copy()
-        else:
-            preds += pred
-
-    preds /= len(models)
+    preds = models_eval(models, merge_features)
     submission = pd.DataFrame(preds, columns=['class'+str(c+1) for c in range(9)])
     submission['ID'] = pid
     sub_name = "submission" + strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) + ".csv"
@@ -416,26 +516,21 @@ def gen_sub(models, merge_features):
 
 
 if __name__ == "__main__":
-    #model_k = keras_train(train, y, 10)
-    #keras_preds = model_eval(model_k[0][0], model_k[0][1], gen_dnn_input(train))
-    #for i in range(1, len(model_k)):
-    #    keras_preds += model_eval(model_k[i][0], model_k[i][1], gen_dnn_input(train))
-    #keras_preds /= len(model_k)
-    #np.save("keras_preds" + \
-    #        strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) , keras_preds)
-    #lgbm_features = siamese_features_array #np.concatenate((lgbm_train_data, siamese_features_array),
-    # np.insert(test, keras_preds, axis = 1)
-    keras_preds = np.load('keras_preds_2017_09_22_10_16_14.npy')
+    #rnn_input = gen_rnn_input(train_text, MAX_NUM_WORDS, MAX_SEQUENCE_LEN)
+    #model_k = rnn_train(rnn_input, y, 10)
+    #exit(0)
+    model_k = keras_train(TRAIN_DATA, TRAIN_LABEL, 10, VALIDE_DATA, VALIDE_LABEL)
+    keras_preds_train = models_eval(model_k, gen_dnn_input(train))
+    np.save("keras_preds" + \
+            strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) , keras_preds_train)
+    # keras_preds_train = np.load('keras_preds_2017_09_24_16_28_23.npy')
     print(train.shape)
-    print(keras_preds.shape)
-    merge_train_data = np.concatenate((train, keras_preds), axis = 1)
-    model_l = lgbm_train(merge_train_data, y, 10) #lgbm_features, lgbm_train_label, 10)#model_k)
+    print(keras_preds_train.shape)
+    merge_train_data = np.concatenate((train, keras_preds_train), axis = 1)
+    model_l = lgbm_train(merge_train_data[TRAIN_INDEX], TRAIN_LABEL, 10, merge_train_data[TEST_INDEX], VALIDE_LABEL)
     #model_x = xgbTrain(merge_train_data, y, 5)#model_k)
 
-   # keras_preds_test = model_eval(model_k[0][0], model_k[0][1], gen_dnn_input(test))
-   # merge_test_data = np.concatenate((test, keras_preds_test), axis = 1)
-    # siamese_features_test_array = siamese_test(model_k[0][0], test)
-    #np.save("siamese_features_test_array" + \
-    #        strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) , siamese_features_test_array)
-    ##model_x = xgbTrain(5)#model_k)
-    gen_sub(model_x, np.concatenate((test, keras_preds_test), axis = 1)) #model_k)
+    ## predict on test and sub
+    #keras_preds_test = models_eval(model_k, gen_dnn_input(test))
+    #merge_test_data = np.concatenate((test, keras_preds_test), axis = 1)
+    #gen_sub(model_l, merge_test_data)
