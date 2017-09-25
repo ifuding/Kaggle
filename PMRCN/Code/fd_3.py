@@ -30,11 +30,11 @@ from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 
 # DNN_PARAMS
-HIDDEN_UNITS = [64, 32, 8]
+HIDDEN_UNITS = [64, 64, 32]
 DNN_EPOCHS = 40
 BATCH_SIZE = 5
 DNN_BN = True
-DROPOUT_RATE = 0.6
+DROPOUT_RATE = 0.5
 SIAMESE_PAIR_SIZE = 100000
 MAX_WORKERS = 8
 EMBEDDING_SIZE = 6
@@ -283,12 +283,12 @@ def lgbm_train(train_data, train_label, fold = 5, valide_data = None, valide_lab
 
 def create_model(input_len):
     model = Sequential()
-    model.add(Dense(HIDDEN_UNITS[0], activation='sigmoid', input_dim = input_len))
+    model.add(Dense(HIDDEN_UNITS[1], activation='sigmoid', input_dim = input_len))
     if DNN_BN:
         model.add(BatchNormalization())
     if DROPOUT_RATE > 0:
         model.add(Dropout(DROPOUT_RATE))
-    model.add(Dense(HIDDEN_UNITS[1], activation='sigmoid'))
+    model.add(Dense(HIDDEN_UNITS[2], activation='sigmoid'))
     if DNN_BN:
         model.add(BatchNormalization())
     if DROPOUT_RATE > 0:
@@ -310,6 +310,17 @@ def create_model(input_len):
     return model
 
 
+def create_lr_model(input_len):
+    model = Sequential()
+    model.add(Dense(9, activation='softmax', input_dim = input_len))
+
+    # optimizer = SGD(lr=1e-3, decay=1e-6, momentum=0.9, nesterov=True)
+    # optimizer = RMSprop(lr=1e-3, rho = 0.9, epsilon = 1e-8)
+    model.compile(optimizer=Adam(), loss='categorical_crossentropy', metrics = ['accuracy'])
+
+    return model
+
+
 def create_embedding_model(CONTINUE_SIZE, SPARSE_SIZE):
     """
     """
@@ -321,9 +332,13 @@ def create_embedding_model(CONTINUE_SIZE, SPARSE_SIZE):
 
     # print "model input size: %d" % CONTINUOUS_COLUMNS
     dense_input = Input(shape=(CONTINUE_SIZE,))
-    merge_input = concatenate([dense_input, sparse_embedding], axis = 1)
+    # dense_input = BatchNormalization()(dense_input)
+    dense_layer = Dense(HIDDEN_UNITS[0], activation='sigmoid')(dense_input)
+    dense_layer = BatchNormalization()(dense_layer)
+    dense_layer = Dropout(DROPOUT_RATE)(dense_layer)
+    merge_input = concatenate([dense_layer, sparse_embedding], axis = 1)
 
-    merge_len = CONTINUE_SIZE + EMBEDDING_SIZE * SPARSE_SIZE
+    merge_len = HIDDEN_UNITS[0] + EMBEDDING_SIZE * SPARSE_SIZE
     output = create_model(merge_len)(merge_input)
 
     model = Model([dense_input, sparse_feature], output)
@@ -340,7 +355,7 @@ def gen_dnn_input(input_array):
     return [input_array[:, CONTINUOUS_INDICES], input_array[:, SPARSE_INDICES]]
 
 
-def keras_train(train_data, train_label, nfolds = 10, valide_data = None, valide_label = None):
+def keras_train(train_data, train_label, nfolds = 10, valide_data = None, valide_label = None, model_type = 'DNN'):
     """
     Detect Fish or noFish
     """
@@ -357,7 +372,10 @@ def keras_train(train_data, train_label, nfolds = 10, valide_data = None, valide
     models = []
     for train_index, test_index in kf:
         # model = create_model(classes = 2)
-        model = create_embedding_model(len(CONTINUOUS_INDICES), len(SPARSE_INDICES))
+        if model_type == 'DNN':
+            model = create_embedding_model(len(CONTINUOUS_INDICES), len(SPARSE_INDICES))
+        else model_type == 'LR':
+            model = create_lr_model()
         # model = create_siamese_net((train.shape)[1])
 
         if valide_data is None:
