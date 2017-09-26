@@ -1,5 +1,5 @@
 
-from sklearn import *
+from sklearn import metrics, preprocessing, pipeline, feature_extraction, decomposition
 import sklearn
 import pandas as pd
 import numpy as np
@@ -7,11 +7,11 @@ import xgboost as xgb
 import lightgbm as lgb
 from time import gmtime, strftime
 import numpy.random as rng
-from multiprocessing.dummy import Pool
+# from multiprocessing.dummy import Pool
 import h5py
-import concurrent.futures
+# import concurrent.futures
 import tensorflow as tf
-import multiprocessing as mp
+# import multiprocessing as mp
 
 from sklearn.cross_validation import KFold
 from keras.models import Sequential, Model
@@ -130,7 +130,7 @@ class cust_txt_col(sklearn.base.BaseEstimator, sklearn.base.TransformerMixin):
 print('Pipeline...')
 fp = pipeline.Pipeline([
     ('union', pipeline.FeatureUnion(
-        n_jobs = 8,
+        n_jobs = -1,
         transformer_list = [
             ('standard', cust_regression_vals()),
             ('pi1', pipeline.Pipeline([('Gene', cust_txt_col('Gene')), ('count_Gene', feature_extraction.text.CountVectorizer(analyzer=u'char', ngram_range=(1, 8))), ('tsvd1', decomposition.TruncatedSVD(n_components=20, n_iter=25, random_state=12))])),
