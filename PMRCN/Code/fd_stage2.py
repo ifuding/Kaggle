@@ -1,5 +1,6 @@
 
-from sklearn import metrics, preprocessing, pipeline, feature_extraction, decomposition
+from sklearn import metrics, preprocessing, pipeline, \
+    feature_extraction, decomposition, model_selection
 import sklearn
 import pandas as pd
 import numpy as np
@@ -56,8 +57,24 @@ trainx = pd.read_csv(data_folder + 'training_text', sep="\|\|", engine='python',
 #print trainx.dtypes
 testx = pd.read_csv(data_folder + 'stage2_test_text', sep="\|\|", engine='python', header=None, skiprows=1, names=["ID","Text"])
 
+valide = pd.read_csv(data_folder + 'test_variants')
+validex = pd.read_csv(data_folder + 'test_text', sep="\|\|", engine='python', header=None, skiprows=1, names=["ID","Text"])
+# print (validex.dtypes)
+valide = pd.merge(valide, validex, how='left', on='ID').fillna('')
+# print (valide.dtypes)
+valide_label = pd.read_csv(data_folder + 'stage1_solution_filtered')
+valide_label['Class'] = valide_label.drop('ID', axis=1).idxmax(axis=1).str[5:]
+valide_label = valide_label[['ID', 'Class']]
+valide = pd.merge(valide_label, valide, how = 'left', on = 'ID').fillna('')
+#print (valide.head())
+#print (valide.dtypes)
+#print (valide.memory_usage())
+
 train = pd.merge(train, trainx, how='left', on='ID').fillna('')
-#train = train.iloc[1:1000]
+train = pd.concat((train, valide), axis=0, ignore_index=True)
+print (train.dtypes)
+print (train.dtypes)
+# exit(0)
 y = train['Class'].values
 train = train.drop(['Class'], axis=1)
 train_text = train['Text'].values
@@ -65,93 +82,93 @@ train_text = train['Text'].values
 test = pd.merge(test, testx, how='left', on='ID').fillna('')
 pid = test['ID'].values
 
-df_all = pd.concat((train, test), axis=0, ignore_index=True)
-df_all['Gene_Share'] = df_all.apply(lambda r: sum([1 for w in r['Gene'].split(' ') if w in r['Text'].split(' ')]), axis=1).astype(np.int8)
-df_all['Variation_Share'] = df_all.apply(lambda r: sum([1 for w in r['Variation'].split(' ') if w in r['Text'].split(' ')]), axis=1).astype(np.int8)
-
-# print df_all[['Gene_Share', 'Variation_Share']].max()
+#df_all = pd.concat((train, test), axis=0, ignore_index=True)
+#df_all['Gene_Share'] = df_all.apply(lambda r: sum([1 for w in r['Gene'].split(' ') if w in r['Text'].split(' ')]), axis=1).astype(np.int8)
+#df_all['Variation_Share'] = df_all.apply(lambda r: sum([1 for w in r['Variation'].split(' ') if w in r['Text'].split(' ')]), axis=1).astype(np.int8)
+#
+## print df_all[['Gene_Share', 'Variation_Share']].max()
+## exit(0)
+#if full_feature:
+#    #commented for Kaggle Limits
+#    for i in range(5):
+#        df_all['Gene_'+str(i)] = df_all['Gene'].map(lambda x: str(x[i]) if len(x)>i else '')
+#        df_all['Variation'+str(i)] = df_all['Variation'].map(lambda x: str(x[i]) if len(x)>i else '')
+#    print(df_all.dtypes)
+#
+#    gen_var_lst = sorted(list(train.Gene.unique()) + list(train.Variation.unique()))
+#    print(len(gen_var_lst))
+#    gen_var_lst = [x for x in gen_var_lst if len(x.split(' '))==1]
+#    print(len(gen_var_lst))
+#    i_ = 0
+#    #commented for Kaggle Limits
+#    for gen_var_lst_itm in gen_var_lst:
+#        if i_ % 100 == 0: print(i_)
+#        df_all['GV_'+str(gen_var_lst_itm)] = df_all['Text'].map(lambda x: str(x).count(str(gen_var_lst_itm))).astype(np.int8)
+#        i_ += 1
+#        if i_ == 5:
+#            break
+#
+#for c in df_all.columns:
+#    if df_all[c].dtype == 'object':
+#        if c in ['Gene','Variation']:
+#            lbl = preprocessing.LabelEncoder()
+#            df_all[c+'_lbl_enc'] = lbl.fit_transform(df_all[c].values)
+#            df_all[c+'_len'] = df_all[c].map(lambda x: len(str(x)))
+#            df_all[c+'_words'] = df_all[c].map(lambda x: len(str(x).split(' ')))
+#        elif c != 'Text':
+#            lbl = preprocessing.LabelEncoder()
+#            df_all[c] = lbl.fit_transform(df_all[c].values)
+#        if c=='Text':
+#            df_all[c+'_len'] = df_all[c].map(lambda x: len(str(x)))
+#            df_all[c+'_words'] = df_all[c].map(lambda x: len(str(x).split(' ')))
+#
+#train = df_all.iloc[:len(train)]
+#print("... train dtypes before svd ...")
+#print(train.dtypes)
+#print(train.head())
+## exit(0)
+#test = df_all.iloc[len(train):]
+#
+#class cust_regression_vals(sklearn.base.BaseEstimator, sklearn.base.TransformerMixin):
+#    def fit(self, x, y=None):
+#        return self
+#    def transform(self, x):
+#        x = x.drop(['Gene', 'Variation','ID','Text'],axis=1).values
+#        return x
+#
+#class cust_txt_col(sklearn.base.BaseEstimator, sklearn.base.TransformerMixin):
+#    def __init__(self, key):
+#        self.key = key
+#    def fit(self, x, y=None):
+#        return self
+#    def transform(self, x):
+#        return x[self.key].apply(str)
+#
+#print('Pipeline...')
+#fp = pipeline.Pipeline([
+#    ('union', pipeline.FeatureUnion(
+#        n_jobs = -1,
+#        transformer_list = [
+#            ('standard', cust_regression_vals()),
+#            ('pi1', pipeline.Pipeline([('Gene', cust_txt_col('Gene')), ('count_Gene', feature_extraction.text.CountVectorizer(analyzer=u'char', ngram_range=(1, 8))), ('tsvd1', decomposition.TruncatedSVD(n_components=20, n_iter=25, random_state=12))])),
+#            ('pi2', pipeline.Pipeline([('Variation', cust_txt_col('Variation')), ('count_Variation', feature_extraction.text.CountVectorizer(analyzer=u'char', ngram_range=(1, 8))), ('tsvd2', decomposition.TruncatedSVD(n_components=20, n_iter=25, random_state=12))])),
+#            #commented for Kaggle Limits
+#            ('pi3', pipeline.Pipeline([('Text', cust_txt_col('Text')), ('tfidf_Text', feature_extraction.text.TfidfVectorizer(ngram_range=(1, 2))), ('tsvd3', decomposition.TruncatedSVD(n_components=50, n_iter=25, random_state=12))]))
+#        ])
+#    )])
+#
+#train = fp.fit_transform(train);
+#print(type(train))
+#print(train.shape)
+#print (train.nbytes)
+#np.save("train_stage2_array", train)
+## print(df.dtypes)
+## print(df.memory_usage())
+#test = fp.transform(test); print(test.shape)
+#np.save("test_stage2_array", test)
 # exit(0)
-if full_feature:
-    #commented for Kaggle Limits
-    for i in range(5):
-        df_all['Gene_'+str(i)] = df_all['Gene'].map(lambda x: str(x[i]) if len(x)>i else '')
-        df_all['Variation'+str(i)] = df_all['Variation'].map(lambda x: str(x[i]) if len(x)>i else '')
-    print(df_all.dtypes)
-
-    gen_var_lst = sorted(list(train.Gene.unique()) + list(train.Variation.unique()))
-    print(len(gen_var_lst))
-    gen_var_lst = [x for x in gen_var_lst if len(x.split(' '))==1]
-    print(len(gen_var_lst))
-    i_ = 0
-    #commented for Kaggle Limits
-    for gen_var_lst_itm in gen_var_lst:
-        if i_ % 100 == 0: print(i_)
-        df_all['GV_'+str(gen_var_lst_itm)] = df_all['Text'].map(lambda x: str(x).count(str(gen_var_lst_itm))).astype(np.int8)
-        i_ += 1
-        if i_ == 5:
-            break
-
-for c in df_all.columns:
-    if df_all[c].dtype == 'object':
-        if c in ['Gene','Variation']:
-            lbl = preprocessing.LabelEncoder()
-            df_all[c+'_lbl_enc'] = lbl.fit_transform(df_all[c].values)
-            df_all[c+'_len'] = df_all[c].map(lambda x: len(str(x)))
-            df_all[c+'_words'] = df_all[c].map(lambda x: len(str(x).split(' ')))
-        elif c != 'Text':
-            lbl = preprocessing.LabelEncoder()
-            df_all[c] = lbl.fit_transform(df_all[c].values)
-        if c=='Text':
-            df_all[c+'_len'] = df_all[c].map(lambda x: len(str(x)))
-            df_all[c+'_words'] = df_all[c].map(lambda x: len(str(x).split(' ')))
-
-train = df_all.iloc[:len(train)]
-print("... train dtypes before svd ...")
-print(train.dtypes)
-print(train.head())
-# exit(0)
-test = df_all.iloc[len(train):]
-
-class cust_regression_vals(sklearn.base.BaseEstimator, sklearn.base.TransformerMixin):
-    def fit(self, x, y=None):
-        return self
-    def transform(self, x):
-        x = x.drop(['Gene', 'Variation','ID','Text'],axis=1).values
-        return x
-
-class cust_txt_col(sklearn.base.BaseEstimator, sklearn.base.TransformerMixin):
-    def __init__(self, key):
-        self.key = key
-    def fit(self, x, y=None):
-        return self
-    def transform(self, x):
-        return x[self.key].apply(str)
-
-print('Pipeline...')
-fp = pipeline.Pipeline([
-    ('union', pipeline.FeatureUnion(
-        n_jobs = -1,
-        transformer_list = [
-            ('standard', cust_regression_vals()),
-            ('pi1', pipeline.Pipeline([('Gene', cust_txt_col('Gene')), ('count_Gene', feature_extraction.text.CountVectorizer(analyzer=u'char', ngram_range=(1, 8))), ('tsvd1', decomposition.TruncatedSVD(n_components=20, n_iter=25, random_state=12))])),
-            ('pi2', pipeline.Pipeline([('Variation', cust_txt_col('Variation')), ('count_Variation', feature_extraction.text.CountVectorizer(analyzer=u'char', ngram_range=(1, 8))), ('tsvd2', decomposition.TruncatedSVD(n_components=20, n_iter=25, random_state=12))])),
-            #commented for Kaggle Limits
-            ('pi3', pipeline.Pipeline([('Text', cust_txt_col('Text')), ('tfidf_Text', feature_extraction.text.TfidfVectorizer(ngram_range=(1, 2))), ('tsvd3', decomposition.TruncatedSVD(n_components=50, n_iter=25, random_state=12))]))
-        ])
-    )])
-
-train = fp.fit_transform(train);
-print(type(train))
-print(train.shape)
-print (train.nbytes)
-np.save("train_stage2_array", train)
-# print(df.dtypes)
-# print(df.memory_usage())
-test = fp.transform(test); print(test.shape)
-np.save("test_stage2_array", test)
-# exit(0)
-#train = np.load("./train_array.npy")
-#test = np.load("./test_array.npy")
+train = np.load("./train_array.npy")
+test = np.load("./test_array.npy")
 # siamese_features_array = np.load("./siamese_features_array_2017_09_15_07_57_44.npy")
 y = y - 1 #fix for zero bound array
 
@@ -279,7 +296,7 @@ def lgbm_train(train_data, train_label, fold = 5, valide_data = None, valide_lab
                         )
         #cv_result = lgb.cv(params, d_train, nfold=10)
         #pd.DataFrame(cv_result).to_csv('cv_result', index = False)
-        # exit(0)
+        #exit(0)
         models.append((bst, 'l'))
 
     return models
@@ -592,22 +609,24 @@ if __name__ == "__main__":
     #np.save("keras_preds" + \
     #        strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) , keras_preds_train)
     # keras_preds_train = np.load('keras_preds_2017_09_24_16_28_23.npy')
-    #model_l = lgbm_train(TRAIN_DATA, TRAIN_LABEL, 2, VALIDE_DATA, VALIDE_LABEL)
-    #lgbm_preds_train = models_eval(model_l, train)
-    #model_x = xgbTrain(TRAIN_DATA, TRAIN_LABEL, 2, VALIDE_DATA, VALIDE_LABEL)
-    #xgb_preds_train = models_eval(model_x, train)
+    # model_l = lgbm_train(TRAIN_DATA, TRAIN_LABEL, 5, VALIDE_DATA, VALIDE_LABEL)
+    model_l = lgbm_train(TRAIN_DATA, TRAIN_LABEL, 5)
+    lgbm_preds_train = models_eval(model_l, train)
+    # model_x = xgbTrain(TRAIN_DATA, TRAIN_LABEL, 5, VALIDE_DATA, VALIDE_LABEL)
+    model_x = xgbTrain(TRAIN_DATA, TRAIN_LABEL, 5)
+    xgb_preds_train = models_eval(model_x, train)
     ## merge_train_data = np.concatenate((keras_preds_train, lgbm_preds_train), axis = 1)
-    #linear_combine(np.array([xgb_preds_train[TEST_INDEX], lgbm_preds_train[TEST_INDEX]]), VALIDE_LABEL)
+    linear_combine(np.array([xgb_preds_train[TEST_INDEX], lgbm_preds_train[TEST_INDEX]]), VALIDE_LABEL)
     ## model_k = keras_train(merge_train_data[TRAIN_INDEX], TRAIN_LABEL, 2, merge_train_data[TEST_INDEX], VALIDE_LABEL, 'LR')
-    #exit(0)
+    exit(0)
     #print(train.shape)
     #print(keras_preds_train.shape)
     #merge_train_data = np.concatenate((train, keras_preds_train), axis = 1)
     #model_l = lgbm_train(merge_train_data[TRAIN_INDEX], TRAIN_LABEL, 10, merge_train_data[TEST_INDEX], VALIDE_LABEL)
-    model_l = lgbm_train(train, y, 10)
-    #model_x = xgbTrain(merge_train_data, y, 5)#model_k)
+    # model_l = lgbm_train(train, y, 10, train, y)
+    model_x = xgbTrain(train, y, 5)#model_k)
 
     ## predict on test and sub
     #keras_preds_test = models_eval(model_k, gen_dnn_input(test))
     #merge_test_data = np.concatenate((test, keras_preds_test), axis = 1)
-    gen_sub(model_l, test)
+    gen_sub(model_x, test)
