@@ -274,12 +274,12 @@ def lgbm_train(train_data, train_label, fold = 5, valide_data = None, valide_lab
            'feature_fraction': 0.5, # 0.6
             'verbose': 0,
           #   'valid_sets': [d_valide],
-            'num_boost_round': 400,
+            'num_boost_round': 381,
             'feature_fraction_seed': num_fold,
             # 'bagging_fraction': 0.9,
             # 'bagging_freq': 15,
             # 'bagging_seed': i,
-             'early_stopping_round': 10,
+            # 'early_stopping_round': 10,
             # 'random_state': 10
             # 'verbose_eval': 20
             #'min_data_in_leaf': 665
@@ -294,7 +294,7 @@ def lgbm_train(train_data, train_label, fold = 5, valide_data = None, valide_lab
                         valid_sets = [d_train, d_valide]
                         #num_boost_round = 1
                         )
-        #cv_result = lgb.cv(params, d_train, nfold=5)
+        #cv_result = lgb.cv(params, d_train, nfold=10)
         #pd.DataFrame(cv_result).to_csv('cv_result', index = False)
         #exit(0)
         models.append((bst, 'l'))
@@ -556,6 +556,14 @@ def gen_sub(models, merge_features, preds = None):
     print('Start generate submission!')
     if preds is None:
         preds = models_eval(models, merge_features)
+    # stage2 calibration on stage1
+    for i in range(len(merge_features)):
+        merge_feature = merge_features[i]
+        for j in range(len(train)):
+            train_feature = train[j]
+            if np.array_equal(merge_feature[:112], train_feature[:112]):
+                preds[i] = np_utils.to_categorical(y[j], 9)
+                break
     submission = pd.DataFrame(preds, columns=['class'+str(c+1) for c in range(9)])
     submission['ID'] = pid
     sub_name = "submission" + strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) + ".csv"
@@ -611,7 +619,7 @@ if __name__ == "__main__":
     #        strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) , keras_preds_train)
     # keras_preds_train = np.load('keras_preds_2017_09_24_16_28_23.npy')
     # model_l = lgbm_train(TRAIN_DATA, TRAIN_LABEL, 5, VALIDE_DATA, VALIDE_LABEL)
-    model_l = lgbm_train(train, y, 5)
+    model_l = lgbm_train(train, y, 10, train, y)
     #model_x = xgbTrain(TRAIN_DATA, TRAIN_LABEL, 10)
     #lgbm_preds_train = models_eval(model_l, train)
     #xgb_preds_train = models_eval(model_x, train)
