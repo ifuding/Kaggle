@@ -42,9 +42,9 @@ MAX_WORKERS = 8
 EMBEDDING_SIZE = 6
 
 # RNN_PARAMS
-MAX_NUM_WORDS = 2000
-RNN_EMBEDDING_DIM = 10
-MAX_SEQUENCE_LEN = 1000
+MAX_NUM_WORDS = 500
+RNN_EMBEDDING_DIM = 8
+MAX_SEQUENCE_LEN = 500
 LSTM_OUT = 32
 
 full_feature = True
@@ -516,7 +516,7 @@ def rnn_train(train_data, train_label, fold = 5):
                 validation_data=(X_valid, Y_valid)
                 , callbacks=callbacks)
 
-        model_name = 'keras' + strftime('_%Y_%m_%d_%H_%M_%S', gmtime())
+        # model_name = 'keras' + strftime('_%Y_%m_%d_%H_%M_%S', gmtime())
         #model.save_weights(model_name)
         #siamese_features_array = gen_siamese_features(model, lgbm_train_data, siamese_train_data, siamese_train_label)
         models.append((model, 'k'))
@@ -612,9 +612,9 @@ def linear_combine(preds_array, labels):
 
 
 if __name__ == "__main__":
-    #rnn_input = gen_rnn_input(train_text, MAX_NUM_WORDS, MAX_SEQUENCE_LEN)
-    #model_k = rnn_train(rnn_input, y, 10)
-    #exit(0)
+    rnn_input = gen_rnn_input(train_text, MAX_NUM_WORDS, MAX_SEQUENCE_LEN)
+    model_k = rnn_train(rnn_input, y, 5)
+    exit(0)
     #model_k = keras_train(TRAIN_DATA, TRAIN_LABEL, 2, VALIDE_DATA, VALIDE_LABEL, 'DNN')
     #keras_preds_train = models_eval(model_k, gen_dnn_input(train))
     #np.save("keras_preds" + \
