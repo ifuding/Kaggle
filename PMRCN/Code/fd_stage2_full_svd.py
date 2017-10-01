@@ -13,6 +13,7 @@ import h5py
 # import concurrent.futures
 import tensorflow as tf
 # import multiprocessing as mp
+import RCNN_Keras as rcnn
 
 from sklearn.cross_validation import KFold
 from keras.models import Sequential, Model
@@ -29,7 +30,6 @@ from sklearn.metrics import log_loss
 from keras import __version__ as keras_version
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
-from keras import regularizers
 
 # DNN_PARAMS
 HIDDEN_UNITS = [40, 20, 4]
@@ -42,10 +42,10 @@ MAX_WORKERS = 8
 EMBEDDING_SIZE = 6
 
 # RNN_PARAMS
-MAX_NUM_WORDS = 500
-RNN_EMBEDDING_DIM = 8
+MAX_NUM_WORDS = 20000
+RNN_EMBEDDING_DIM = 10
 MAX_SEQUENCE_LEN = 500
-LSTM_OUT = 32
+LSTM_OUT = 4
 
 full_feature = True
 
@@ -428,6 +428,10 @@ def keras_train(train_data, train_label, nfolds = 10, valide_data = None, valide
             X_valid = gen_dnn_input(X_valid)
         elif model_type == 'LR':
             model = create_lr_model(X_train.shape[1])
+        elif model_type == 'RCNN':
+            model = rcnn.Create_RCNN(MAX_NUM_WORDS, RNN_EMBEDDING_DIM, 9, RNN_EMBEDDING_DIM, LSTM_OUT)
+            X_train = rcnn.gen_RCNN_Input(X_train, MAX_NUM_WORDS, MAX_SEQUENCE_LEN)
+            X_valid = rcnn.gen_RCNN_Input(X_valid, MAX_NUM_WORDS, MAX_SEQUENCE_LEN)
         else:
             print('unknown keras model')
             exit(1)
@@ -612,9 +616,10 @@ def linear_combine(preds_array, labels):
 
 
 if __name__ == "__main__":
-    rnn_input = gen_rnn_input(train_text, MAX_NUM_WORDS, MAX_SEQUENCE_LEN)
-    model_k = rnn_train(rnn_input, y, 5)
-    exit(0)
+    model_k = keras_train(train_text, y, 10, model_type = 'RCNN')
+    #rnn_input = gen_rnn_input(train_text, MAX_NUM_WORDS, MAX_SEQUENCE_LEN)
+    #model_k = rnn_train(rnn_input, y, 10)
+    #exit(0)
     #model_k = keras_train(TRAIN_DATA, TRAIN_LABEL, 2, VALIDE_DATA, VALIDE_LABEL, 'DNN')
     #keras_preds_train = models_eval(model_k, gen_dnn_input(train))
     #np.save("keras_preds" + \
