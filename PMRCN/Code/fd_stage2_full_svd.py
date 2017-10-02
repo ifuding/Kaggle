@@ -14,6 +14,8 @@ import h5py
 import tensorflow as tf
 # import multiprocessing as mp
 import RCNN_Keras as rcnn
+import gensim
+import os
 
 from sklearn.cross_validation import KFold
 from keras.models import Sequential, Model
@@ -33,8 +35,8 @@ from keras.preprocessing.sequence import pad_sequences
 
 # DNN_PARAMS
 HIDDEN_UNITS = [40, 20, 4]
-DNN_EPOCHS = 40
-BATCH_SIZE = 5
+DNN_EPOCHS = 1
+BATCH_SIZE = 10
 DNN_BN = True
 DROPOUT_RATE = 0.5
 SIAMESE_PAIR_SIZE = 100000
@@ -42,10 +44,11 @@ MAX_WORKERS = 8
 EMBEDDING_SIZE = 6
 
 # RNN_PARAMS
-MAX_NUM_WORDS = 20000
-RNN_EMBEDDING_DIM = 10
-MAX_SEQUENCE_LEN = 500
-LSTM_OUT = 4
+MAX_NUM_WORDS = 10000
+RNN_EMBEDDING_DIM = 16
+MAX_SEQUENCE_LEN = 1000
+LSTM_UNIT = 16
+RCNN_HIDDEN_UNIT = 8
 
 full_feature = True
 
@@ -82,7 +85,8 @@ train_text = train['Text'].values
 test = pd.merge(test, testx, how='left', on='ID').fillna('')
 pid = test['ID'].values
 
-#df_all = pd.concat((train, test), axis=0, ignore_index=True)
+df_all = pd.concat((train, test), axis=0, ignore_index=True)
+full_text = df_all['Text'].values
 #df_all['Gene_Share'] = df_all.apply(lambda r: sum([1 for w in r['Gene'].split(' ') if w in r['Text'].split(' ')]), axis=1).astype(np.int8)
 #df_all['Variation_Share'] = df_all.apply(lambda r: sum([1 for w in r['Variation'].split(' ') if w in r['Text'].split(' ')]), axis=1).astype(np.int8)
 #
@@ -379,7 +383,7 @@ def gen_dnn_input(input_array):
     return [input_array[:, CONTINUOUS_INDICES], input_array[:, SPARSE_INDICES]]
 
 
-def keras_train(train_data, train_label, nfolds = 10, valide_data = None, valide_label = None, model_type = 'DNN'):
+def keras_train(train_data, train_label, nfolds = 10, valide_data = None, valide_label = None, model_type = 'DNN', tokenizer = None, wv_model = None):
     """
     Detect Fish or noFish
     """
@@ -429,9 +433,10 @@ def keras_train(train_data, train_label, nfolds = 10, valide_data = None, valide
         elif model_type == 'LR':
             model = create_lr_model(X_train.shape[1])
         elif model_type == 'RCNN':
-            model = rcnn.Create_RCNN(MAX_NUM_WORDS, RNN_EMBEDDING_DIM, 9, RNN_EMBEDDING_DIM, LSTM_OUT)
-            X_train = rcnn.gen_RCNN_Input(X_train, MAX_NUM_WORDS, MAX_SEQUENCE_LEN)
-            X_valid = rcnn.gen_RCNN_Input(X_valid, MAX_NUM_WORDS, MAX_SEQUENCE_LEN)
+            model = rcnn.Create_RCNN(MAX_NUM_WORDS, RNN_EMBEDDING_DIM, 9, LSTM_UNIT, RCNN_HIDDEN_UNIT, wv_model)
+            print(model.summary())
+            X_train = rcnn.gen_RCNN_Input(X_train, MAX_NUM_WORDS, MAX_SEQUENCE_LEN, wv_model)
+            X_valid = rcnn.gen_RCNN_Input(X_valid, MAX_NUM_WORDS, MAX_SEQUENCE_LEN, wv_model)
         else:
             print('unknown keras model')
             exit(1)
@@ -446,25 +451,37 @@ def keras_train(train_data, train_label, nfolds = 10, valide_data = None, valide
                 , callbacks=callbacks)
 
         model_name = 'keras' + strftime('_%Y_%m_%d_%H_%M_%S', gmtime())
-        #model.save_weights(model_name)
+        model.save_weights(model_name)
+        keras_preds_train = model_eval(model, 'RCNN', X_train)
+        np.save("keras_prde_train", keras_preds_train)
+        keras_preds_valid = model_eval(model, 'RCNN', X_valid)
+        np.save("keras_prde_valid", keras_preds_valid)
         #siamese_features_array = gen_siamese_features(model, lgbm_train_data, siamese_train_data, siamese_train_label)
-        models.append((model, 'k'))
-        #if len(models) == 5:
-        #    break
+        exit(0)
+        models.append((model, model_type))
+        if len(models) == 1:
+            break
 
     return models #, siamese_features_array
 
 
-def gen_rnn_input(input_text, max_num_words, max_len):
+def gen_tokenizer(full_corpus, max_num_words):
+    tokenizer = Tokenizer(num_words = max_num_words)
+    tokenizer.fit_on_texts(full_corpus)
+    return tokenizer
+
+
+def gen_rnn_input(input_text, max_len = None, tokenizer = None):
     """
     Gen rnn input sequence
     """
-    tokenizer = Tokenizer(num_words = max_num_words)
-    tokenizer.fit_on_texts(input_text)
+    #tokenizer = Tokenizer(num_words = max_num_words)
+    #tokenizer.fit_on_texts(input_text)
     # Pad the data
     print("RNN: Convert text to indice sequence!")
     output_sequences = tokenizer.texts_to_sequences(input_text)
-    output_sequences = pad_sequences(output_sequences, maxlen= max_len)
+    if max_len is None:
+        output_sequences = pad_sequences(output_sequences, maxlen= max_len)
     return output_sequences
 
 
@@ -534,7 +551,7 @@ def model_eval(model, model_type, data_frame):
     """
     if model_type == 'l':
         preds = model.predict(data_frame)
-    elif model_type == 'k':
+    elif model_type == 'k' or model_type == 'LR' or model_type == 'DNN' or model_type == 'RCNN':
         preds = model.predict(data_frame, batch_size=BATCH_SIZE, verbose=2)
     elif model_type == 't':
         print("ToDO")
@@ -616,17 +633,24 @@ def linear_combine(preds_array, labels):
 
 
 if __name__ == "__main__":
-    model_k = keras_train(train_text, y, 10, model_type = 'RCNN')
+    # tokenizer = gen_tokenizer(full_text, MAX_NUM_WORDS)
+    wv_model = rcnn.get_word2vec(full_text)
+    # wv_model = get_word2vec(gen_rnn_input(full_text, tokenizer = tokenizer))
+    model_k = keras_train(train_text, y, 10, model_type = 'RCNN', wv_model = wv_model, tokenizer = None)
+    #model_k = rcnn.Create_RCNN(MAX_NUM_WORDS, RNN_EMBEDDING_DIM, 9, LSTM_UNIT, RCNN_HIDDEN_UNIT, wv_model)
+    #model_k.load_weights('keras_2017_10_02_06_11_39')
+    #model_k = [(model_k, 'RCNN')]
     #rnn_input = gen_rnn_input(train_text, MAX_NUM_WORDS, MAX_SEQUENCE_LEN)
     #model_k = rnn_train(rnn_input, y, 10)
     #exit(0)
     #model_k = keras_train(TRAIN_DATA, TRAIN_LABEL, 2, VALIDE_DATA, VALIDE_LABEL, 'DNN')
-    #keras_preds_train = models_eval(model_k, gen_dnn_input(train))
-    #np.save("keras_preds" + \
-    #        strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) , keras_preds_train)
+    rcnn_train_input = rcnn.gen_RCNN_Input(train_text, MAX_NUM_WORDS, MAX_SEQUENCE_LEN, wv_model)
+    keras_preds_train = models_eval(model_k, rcnn_train_input)
+    np.save("keras_preds" + \
+            strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) , keras_preds_train)
     # keras_preds_train = np.load('keras_preds_2017_09_24_16_28_23.npy')
     # model_l = lgbm_train(TRAIN_DATA, TRAIN_LABEL, 5, VALIDE_DATA, VALIDE_LABEL)
-    model_l = lgbm_train(train, y, 10, train, y)
+    # model_l = lgbm_train(train, y, 10, train, y)
     #model_x = xgbTrain(TRAIN_DATA, TRAIN_LABEL, 10)
     #lgbm_preds_train = models_eval(model_l, train)
     #xgb_preds_train = models_eval(model_x, train)
@@ -637,4 +661,4 @@ if __name__ == "__main__":
     #lgbm_preds_train = models_eval(model_l, test)
     #xgb_preds_train = models_eval(model_x, test)
     #merge_preds = opt_l * xgb_preds_train + opt_r * lgbm_preds_train
-    gen_sub(model_l, test) #, merge_preds)
+    # gen_sub(model_l, test) #, merge_preds)
