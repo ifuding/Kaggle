@@ -34,16 +34,47 @@ from keras.preprocessing.sequence import pad_sequences
 
 def load_data():
     data_folder = '../Data/'
-    train = pd.read_csv(data_folder + 'train.csv').iloc[:10000]
+    train = pd.read_csv(data_folder + 'train.csv')
     train_label = train['target'].astype(np.int8)
     train = train.drop(['target', 'id'], axis = 1).values
-    test = pd.read_csv(data_folder + 'test.csv').iloc[:1000]
+    test = pd.read_csv(data_folder + 'test.csv')
     test_id = test['id'].astype(np.int32).values
     test = test.drop(['id'], axis = 1).values
     return train, train_label, test, test_id
 
 
-def lgbm_train(train_data, train_label, fold = 5, valide_data = None, valide_label = None):
+def xgb_train(train_data, train_label, fold = 5, valide_data = None, valide_label = None):
+    """
+    """
+    denom = 0
+    # fold = 5 #Change to 5, 1 for Kaggle Limits
+    models = []
+    for i in range(fold):
+        params = {
+            'eta': 0.03,
+            'max_depth': 5,
+            'objective': 'binary:logistic',
+            'eval_metric': 'logloss',
+            'seed': i,
+            'silent': True
+        }
+        if valide_data is None:
+            x1, x2, y1, y2 = model_selection.train_test_split(train_data, train_label, test_size=1./fold, random_state=i)
+        else:
+            x1, x2, y1, y2 = train_data, valide_data, train_label, valide_label
+        watchlist = [(xgb.DMatrix(x1, y1), 'train'), (xgb.DMatrix(x2, y2), 'valid')]
+        model = xgb.train(params, xgb.DMatrix(x1, y1), 1000,  watchlist, verbose_eval=50, early_stopping_rounds=100)
+        #score1 = metrics.log_loss(y2, model.predict(xgb.DMatrix(x2), ntree_limit=model.best_ntree_limit), labels = list(range(9)))
+        #print(score1)
+        #cv_result = xgb.cv(params, xgb.DMatrix(x1, y1), 1000, nfold = fold, verbose_eval=50, early_stopping_rounds = 100)
+        #cv_result.to_csv('xgb_cv_result', index = False)
+        #exit(0)
+        models.append((model, 'x'))
+
+    return models
+
+
+def lgbm_train(train_data, train_label, fold = 5, stacking = False, valide_data = None, valide_label = None):
     """
     LGB Training
     """
@@ -52,16 +83,24 @@ def lgbm_train(train_data, train_label, fold = 5, valide_data = None, valide_lab
 
     kf = KFold(len(train_label), n_folds=fold, shuffle=True)
 
+    stacking_data = None
+    stacking_label = None
     num_fold = 0
     models = []
     for train_index, test_index in kf:
         if valide_label is None:
-            d_train = lgb.Dataset(train_data[train_index], train_label[train_index]) #, categorical_feature = SPARCE_INDICES)
-            d_valide = lgb.Dataset(train_data[test_index], train_label[test_index])
+            train_part = train_data[train_index]
+            train_part_label = train_label[train_index]
+            valide_part = train_data[test_index]
+            valide_part_label = train_label[test_index]
         else:
-            d_train = lgb.Dataset(train_data, train_label) #, categorical_feature = SPARCE_INDICES)
-            d_valide = lgb.Dataset(valide_data, valide_label)
+            train_part = train_data
+            train_part_label = train_label
+            valide_part = valide_data
+            valide_part_label = valide_label
 
+        d_train = lgb.Dataset(train_part, train_part_label)
+        d_valide = lgb.Dataset(valide_part, valide_part_label)
         params = {
             'task': 'train',
             'boosting_type': 'gbdt',
@@ -97,12 +136,23 @@ def lgbm_train(train_data, train_label, fold = 5, valide_data = None, valide_lab
                         valid_sets = [d_train, d_valide]
                         #num_boost_round = 1
                         )
+        if stacking:
+            if stacking_data is None:
+                valide_pred = model_eval(bst, 'l', valide_part)
+                stacking_data = np.c_[valide_part, valide_pred]
+                stacking_label = valide_part_label
+            else:
+                valide_pred = model_eval(bst, 'l', valide_part)
+                stacking_data = np.append(stacking_data, np.c_[valide_part, valide_pred], axis = 0)
+                stacking_label = np.append(stacking_label, valide_part_label, axis = 0)
+            print('stacking_data shape: {0}'.format(stacking_data.shape))
+            print('stacking_label shape: {0}'.format(stacking_label.shape))
         #cv_result = lgb.cv(params, d_train, nfold=fold)
         #pd.DataFrame(cv_result).to_csv('cv_result', index = False)
         #exit(0)
         models.append((bst, 'l'))
 
-    return models
+    return models, stacking_data, stacking_label
 
 
 def model_eval(model, model_type, data_frame):
@@ -145,6 +195,11 @@ def gen_sub(models, merge_features, test_id, preds = None):
     submission.to_csv(sub_name, index=False)
 
 if __name__ == "__main__":
-    train, train_label, test, test_id = load_data()
-    model_l = lgbm_train(train, train_label, 2, train, train_label)
-    gen_sub(model_l, test, test_id)
+    #train, train_label, test, test_id = load_data()
+    #model_l, stacking_data, stacking_label = lgbm_train(train, train_label, 5, True)
+    #np.save('stacking_data', stacking_data)
+    #np.save('stacking_label', stacking_label)
+    stacking_data = np.load('stacking_data.npy')[:, :-1]
+    stacking_label = np.load('stacking_label.npy')
+    model_x = xgb_train(stacking_data, stacking_label, 5)
+    # gen_sub(model_l, test, test_id)
