@@ -52,7 +52,7 @@ def xgb_train(train_data, train_label, fold = 5, valide_data = None, valide_labe
     for i in range(fold):
         params = {
             'eta': 0.03,
-            'max_depth': 5,
+            'max_depth': 6,
             'objective': 'binary:logistic',
             'eval_metric': 'logloss',
             'seed': i,
@@ -63,12 +63,12 @@ def xgb_train(train_data, train_label, fold = 5, valide_data = None, valide_labe
         else:
             x1, x2, y1, y2 = train_data, valide_data, train_label, valide_label
         watchlist = [(xgb.DMatrix(x1, y1), 'train'), (xgb.DMatrix(x2, y2), 'valid')]
-        model = xgb.train(params, xgb.DMatrix(x1, y1), 1000,  watchlist, verbose_eval=50, early_stopping_rounds=100)
+        # model = xgb.train(params, xgb.DMatrix(x1, y1), 1000,  watchlist, verbose_eval=50, early_stopping_rounds=100)
         #score1 = metrics.log_loss(y2, model.predict(xgb.DMatrix(x2), ntree_limit=model.best_ntree_limit), labels = list(range(9)))
         #print(score1)
-        #cv_result = xgb.cv(params, xgb.DMatrix(x1, y1), 1000, nfold = fold, verbose_eval=50, early_stopping_rounds = 100)
-        #cv_result.to_csv('xgb_cv_result', index = False)
-        #exit(0)
+        cv_result = xgb.cv(params, xgb.DMatrix(x1, y1), 1000, nfold = fold, verbose_eval=50, early_stopping_rounds = 100)
+        cv_result.to_csv('xgb_cv_result', index = False)
+        exit(0)
         models.append((model, 'x'))
 
     return models
@@ -199,7 +199,7 @@ if __name__ == "__main__":
     #model_l, stacking_data, stacking_label = lgbm_train(train, train_label, 5, True)
     #np.save('stacking_data', stacking_data)
     #np.save('stacking_label', stacking_label)
-    stacking_data = np.load('stacking_data.npy')[:, :-1]
+    stacking_data = np.load('stacking_data.npy')# [:, :-1]
     stacking_label = np.load('stacking_label.npy')
     model_x = xgb_train(stacking_data, stacking_label, 5)
     # gen_sub(model_l, test, test_id)
