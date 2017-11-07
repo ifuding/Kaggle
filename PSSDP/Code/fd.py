@@ -34,22 +34,40 @@ from keras.preprocessing.sequence import pad_sequences
 
 def load_data():
     data_folder = '../Data/'
-    train = pd.read_csv(data_folder + 'train.csv')
+    train = pd.read_csv(data_folder + 'train.csv').iloc[:1000]
     train_label = train['target'].astype(np.int8)
     train = train.drop(['target', 'id'], axis = 1).values
-    test = pd.read_csv(data_folder + 'test.csv')
+    test = pd.read_csv(data_folder + 'test.csv').iloc[:1000]
     test_id = test['id'].astype(np.int32).values
     test = test.drop(['id'], axis = 1).values
     return train, train_label, test, test_id
 
 
-def xgb_train(train_data, train_label, fold = 5, valide_data = None, valide_label = None):
+def xgb_train(train_data, train_label, fold = 5, stacking = False, valide_data = None, valide_label = None, test_data = None):
     """
     """
     denom = 0
     # fold = 5 #Change to 5, 1 for Kaggle Limits
     models = []
-    for i in range(fold):
+    kf = KFold(len(train_label), n_folds=fold, shuffle=True)
+
+    stacking_data = None
+    stacking_label = None
+    test_preds = None
+
+    i = 0
+    for train_index, test_index in kf:
+        if valide_label is None:
+            train_part = train_data[train_index]
+            train_part_label = train_label[train_index]
+            valide_part = train_data[test_index]
+            valide_part_label = train_label[test_index]
+        else:
+            train_part = train_data
+            train_part_label = train_label
+            valide_part = valide_data
+            valide_part_label = valide_label
+
         params = {
             'eta': 0.03,
             'max_depth': 6,
@@ -58,20 +76,34 @@ def xgb_train(train_data, train_label, fold = 5, valide_data = None, valide_labe
             'seed': i,
             'silent': True
         }
-        if valide_data is None:
-            x1, x2, y1, y2 = model_selection.train_test_split(train_data, train_label, test_size=1./fold, random_state=i)
-        else:
-            x1, x2, y1, y2 = train_data, valide_data, train_label, valide_label
-        watchlist = [(xgb.DMatrix(x1, y1), 'train'), (xgb.DMatrix(x2, y2), 'valid')]
-        # model = xgb.train(params, xgb.DMatrix(x1, y1), 1000,  watchlist, verbose_eval=50, early_stopping_rounds=100)
-        #score1 = metrics.log_loss(y2, model.predict(xgb.DMatrix(x2), ntree_limit=model.best_ntree_limit), labels = list(range(9)))
-        #print(score1)
-        cv_result = xgb.cv(params, xgb.DMatrix(x1, y1), 1000, nfold = fold, verbose_eval=50, early_stopping_rounds = 100)
-        cv_result.to_csv('xgb_cv_result', index = False)
-        exit(0)
+        #if valide_data is None:
+        #    x1, x2, y1, y2 = model_selection.train_test_split(train_data, train_label, test_size=1./fold, random_state=i)
+        #else:
+        #    x1, x2, y1, y2 = train_data, valide_data, train_label, valide_label
+        watchlist = [(xgb.DMatrix(train_part, train_part_label), 'train'), (xgb.DMatrix(valide_part, valide_part_label), 'valid')]
+        model = xgb.train(params, xgb.DMatrix(train_part, train_part_label), 1000,  watchlist, verbose_eval=50, early_stopping_rounds=100)
+        #cv_result = xgb.cv(params, xgb.DMatrix(x1, y1), 1000, nfold = fold, verbose_eval=50, early_stopping_rounds = 100)
+        #cv_result.to_csv('xgb_cv_result', index = False)
+        #exit(0)
+        if stacking:
+            valide_pred = model_eval(model, 'x', valide_part)
+            test_pred = model_eval(model, 'x', test_data)
+            if stacking_data is None:
+                stacking_data = np.c_[valide_part, valide_pred]
+                stacking_label = valide_part_label
+                test_preds = test_pred
+            else:
+                stacking_data = np.append(stacking_data, np.c_[valide_part, valide_pred], axis = 0)
+                stacking_label = np.append(stacking_label, valide_part_label, axis = 0)
+                test_preds += test_pred
+            print('stacking_data shape: {0}'.format(stacking_data.shape))
+            print('stacking_label shape: {0}'.format(stacking_label.shape))
         models.append((model, 'x'))
+        i += 1
+    test_preds /= fold
+    test_data = np.c_(test_data, test_preds)
 
-    return models
+    return models, stacking_data, stacking_label, test_data
 
 
 def lgbm_train(train_data, train_label, fold = 5, stacking = False, valide_data = None, valide_label = None):
@@ -112,11 +144,11 @@ def lgbm_train(train_data, train_label, fold = 5, stacking = False, valide_data 
             'num_leaves': 40, # 60,
           #  'min_sum_hessian_in_leaf': 20,
             'max_depth': 6, # 10,
-            'learning_rate': 0.03, # 0.025,
-           'feature_fraction': 0.6, # 0.6
+            'learning_rate': 0.028, # 0.025,
+           'feature_fraction': 0.35, # 0.6
             'verbose': 0,
           #   'valid_sets': [d_valide],
-            'num_boost_round': 360, #381,
+            'num_boost_round': 400, #381,
             'feature_fraction_seed': num_fold,
             # 'bagging_fraction': 0.9,
             # 'bagging_freq': 15,
@@ -195,11 +227,15 @@ def gen_sub(models, merge_features, test_id, preds = None):
     submission.to_csv(sub_name, index=False)
 
 if __name__ == "__main__":
-    #train, train_label, test, test_id = load_data()
+    train, train_label, test, test_id = load_data()
     #model_l, stacking_data, stacking_label = lgbm_train(train, train_label, 5, True)
     #np.save('stacking_data', stacking_data)
     #np.save('stacking_label', stacking_label)
-    stacking_data = np.load('stacking_data.npy')# [:, :-1]
-    stacking_label = np.load('stacking_label.npy')
-    model_x = xgb_train(stacking_data, stacking_label, 5)
-    # gen_sub(model_l, test, test_id)
+    #stacking_data = np.load('stacking_data_xgb.npy')
+    #stacking_label = np.load('stacking_label_xgb.npy')
+    model_x, stacking_data, stacking_label, test = xgb_train(train, train_label, 5, True, None, None, test)
+    np.save('stacking_data_xgb', stacking_data)
+    np.save('stacking_label_xgb', stacking_label)
+    np.save('stacking_test_data_xgb', test)
+    model_l, stacking_data, stacking_label = lgbm_train(stacking_data, stacking_label, 5, False)
+    gen_sub(model_l, test, test_id)
