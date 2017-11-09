@@ -20,7 +20,7 @@ from keras.models import Sequential, Model
 from keras.layers.core import Dense, Dropout, Flatten, Reshape
 from keras.layers.normalization import BatchNormalization
 from keras.layers.embeddings import Embedding
-from keras.layers import Input, concatenate, merge, LSTM
+from keras.layers import Input, concatenate, merge, LSTM, Lambda
 from keras.layers.convolutional import Convolution2D, MaxPooling2D, ZeroPadding2D, AveragePooling2D
 from keras.optimizers import SGD, RMSprop, Adam
 from keras.callbacks import EarlyStopping
@@ -31,16 +31,32 @@ from keras import __version__ as keras_version
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 
+DNN_EPOCHS = 10
+BATCH_SIZE = 50
+DNN_BN = False
+HIDDEN_UNITS = [40, 20, 5]
+DROPOUT_RATE = 0
+LOAD_DATA = True
 
-def load_data():
+if LOAD_DATA:
     data_folder = '../Data/'
     train = pd.read_csv(data_folder + 'train.csv')
+    continus_columns = train.columns.to_series().select(lambda s: not s.endswith(('_cat', 'id', 'target', '_bin'))).values
+    print('continus_columns: {}\n{}'.format(len(continus_columns), continus_columns))
+    category_columns = train.columns.to_series().select(lambda s: s.endswith(('_cat'))).values
+    print('category_columns: {}\n{}'.format(len(category_columns), category_columns))
+    binary_columns = train.columns.to_series().select(lambda s: s.endswith(('_bin'))).values
+    print('binary_columns: {}\n{}'.format(len(binary_columns), binary_columns))
+    category_nunique = train[category_columns].nunique().values
+    feature_columns = list(continus_columns) + list(binary_columns)
     train_label = train['target'].astype(np.int8)
-    train = train.drop(['target', 'id'], axis = 1).values
+    train_category = train[category_columns].values
+    train = train.drop(['target', 'id'], axis = 1)[feature_columns].values
     test = pd.read_csv(data_folder + 'test.csv')
     test_id = test['id'].astype(np.int32).values
-    test = test.drop(['id'], axis = 1).values
-    return train, train_label, test, test_id
+    test_category = test[category_columns]
+    test = test.drop(['id'], axis = 1)[feature_columns].values
+    # return train, train_label, test, test_id
 
 def eval_gini(y_true, y_prob):
     y_true = np.asarray(y_true)
@@ -125,6 +141,92 @@ def xgb_train(train_data, train_label, fold = 5, stacking = False, valide_data =
     test_data = np.c_[test_data, test_preds]
 
     return models, stacking_data, stacking_label, test_data
+
+def create_embedding_layer():
+    input = Input(shape=(), dtype='int8')
+    x_ohe = Lambda(K.one_hot, arguments={'nb_classes': nb_classes}, output_shape=output_shape)(input)
+
+
+def create_dnn(input_len):
+    model = Sequential()
+    # First HN
+    model.add(Dense(HIDDEN_UNITS[0], activation='sigmoid', input_dim = input_len))
+    if DNN_BN:
+        model.add(BatchNormalization())
+    if DROPOUT_RATE > 0:
+        model.add(Dropout(DROPOUT_RATE))
+    # Second HN
+    model.add(Dense(HIDDEN_UNITS[1], activation='sigmoid'))
+    if DNN_BN:
+        model.add(BatchNormalization())
+    if DROPOUT_RATE > 0:
+        model.add(Dropout(DROPOUT_RATE))
+    # Third HN
+    model.add(Dense(HIDDEN_UNITS[2], activation='sigmoid'))
+    if DNN_BN:
+        model.add(BatchNormalization())
+    if DROPOUT_RATE > 0:
+        model.add(Dropout(DROPOUT_RATE))
+    model.add(Dense(1, activation='sigmoid'))
+
+    # optimizer = SGD(lr=1e-3, decay=1e-6, momentum=0.9, nesterov=True)
+    optimizer = RMSprop(lr=1e-3, rho = 0.9, epsilon = 1e-8)
+    model.compile(optimizer=Adam(), loss='binary_crossentropy')
+
+    return model
+
+def keras_train(train_data, train_label, fold = 5, stacking = False, valide_data = None, valide_label = None):
+    """
+    LGB Training
+    """
+    print("Over all training size:")
+    print(train_data.shape)
+
+    kf = KFold(len(train_label), n_folds=fold, shuffle=True)
+
+    stacking_data = None
+    stacking_label = None
+    num_fold = 0
+    models = []
+    for train_index, test_index in kf:
+        if valide_label is None:
+            train_part = train_data[train_index]
+            train_part_label = train_label[train_index]
+            valide_part = train_data[test_index]
+            valide_part_label = train_label[test_index]
+        else:
+            train_part = train_data
+            train_part_label = train_label
+            valide_part = valide_data
+            valide_part_label = valide_label
+
+        model = create_dnn(train_data.shape[1])
+
+        print('fold: %d th keras train :-)' % (num_fold))
+        num_fold += 1
+        callbacks = [
+            EarlyStopping(monitor='val_loss', patience=3, verbose=0),
+        ]
+        model.fit(train_part,
+                train_part_label, batch_size=BATCH_SIZE, epochs=DNN_EPOCHS,
+                shuffle=True, verbose=2,
+                validation_data=(valide_part, valide_part_label)
+                , callbacks=callbacks)
+
+        if stacking:
+            if stacking_data is None:
+                valide_pred = model_eval(model, 'k', valide_part)
+                stacking_data = np.c_[valide_part, valide_pred]
+                stacking_label = valide_part_label
+            else:
+                valide_pred = model_eval(model, 'k', valide_part)
+                stacking_data = np.append(stacking_data, np.c_[valide_part, valide_pred], axis = 0)
+                stacking_label = np.append(stacking_label, valide_part_label, axis = 0)
+            print('stacking_data shape: {0}'.format(stacking_data.shape))
+            print('stacking_label shape: {0}'.format(stacking_label.shape))
+        models.append((model, 'k'))
+
+    return models, stacking_data, stacking_label
 
 
 def lgbm_train(train_data, train_label, fold = 5, stacking = False, valide_data = None, valide_label = None):
@@ -253,12 +355,13 @@ if __name__ == "__main__":
     #model_l, stacking_data, stacking_label = lgbm_train(train, train_label, 5, True)
     #np.save('stacking_data', stacking_data)
     #np.save('stacking_label', stacking_label)
-    stacking_data = np.load('stacking_data_xgb.npy')
-    stacking_label = np.load('stacking_label_xgb.npy')
-    test = np.load('stacking_test_data_xgb.npy')
+    #stacking_data = np.load('stacking_data_xgb.npy')
+    #stacking_label = np.load('stacking_label_xgb.npy')
+    #test = np.load('stacking_test_data_xgb.npy')
     #model_x, stacking_data, stacking_label, test = xgb_train(train, train_label, 5, True, None, None, test)
     #np.save('stacking_data_xgb', stacking_data)
     #np.save('stacking_label_xgb', stacking_label)
     #np.save('stacking_test_data_xgb', test)
-    model_l, stacking_data, stacking_label = lgbm_train(stacking_data, stacking_label, 5, False)
+    # model_l, stacking_data, stacking_label = lgbm_train(stacking_data, stacking_label, 5, False)
+    model_k, stacking_data, stacking_label = keras_train(train, train_label, 5, False)
     #gen_sub(model_l, test, test_id)
