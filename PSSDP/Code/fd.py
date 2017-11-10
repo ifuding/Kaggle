@@ -51,7 +51,8 @@ if LOAD_DATA:
     feature_columns = list(continus_columns) + list(binary_columns)
     train_label = train['target'].astype(np.int8)
     train_category = train[category_columns].values
-    train = train.drop(['target', 'id'], axis = 1)[feature_columns].values
+    train = train.drop(['target', 'id'], axis = 1)
+    category_indice = [i ]
     test = pd.read_csv(data_folder + 'test.csv')
     test_id = test['id'].astype(np.int32).values
     test_category = test[category_columns]
@@ -143,8 +144,12 @@ def xgb_train(train_data, train_label, fold = 5, stacking = False, valide_data =
     return models, stacking_data, stacking_label, test_data
 
 def create_embedding_layer():
-    input = Input(shape=(), dtype='int8')
-    x_ohe = Lambda(K.one_hot, arguments={'nb_classes': nb_classes}, output_shape=output_shape)(input)
+    embedding_list = []
+    for nunique in category_nunique:
+        input = Input(shape=(1, ), dtype='int8')
+        x_ohe = Lambda(k.one_hot, arguments={'nb_classes': nunique}, output_shape=(1, nunique))(input)
+        embedding_list.append(x_ohe)
+    return concatenate(embedding_list, axis = 1)
 
 
 def create_dnn(input_len):
@@ -175,6 +180,24 @@ def create_dnn(input_len):
 
     return model
 
+
+def create_embedding_model():
+    """
+    """
+    dense_input = Input(shape=(len(feature_columns),))
+    embedding_layer = create_embedding_layer()
+    merge_input = concatenate([dense_input, embedding_layer], axis = 1)
+
+    merge_len = len(feature_columns) + sum(category_nunique)
+    output = create_model(merge_len)(merge_input)
+
+    model = Model([dense_input, aisle_id, department_id], output)
+    # optimizer = RMSprop(lr=1e-3, rho = 0.9, epsilon = 1e-8)
+    model.compile(optimizer=Adam(), loss='binary_crossentropy')
+
+    return model
+
+
 def keras_train(train_data, train_label, fold = 5, stacking = False, valide_data = None, valide_label = None):
     """
     LGB Training
@@ -200,7 +223,8 @@ def keras_train(train_data, train_label, fold = 5, stacking = False, valide_data
             valide_part = valide_data
             valide_part_label = valide_label
 
-        model = create_dnn(train_data.shape[1])
+        # model = create_dnn(train_data.shape[1])
+        model = create_embedding_model()
 
         print('fold: %d th keras train :-)' % (num_fold))
         num_fold += 1
