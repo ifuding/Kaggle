@@ -16,6 +16,7 @@ import gensim
 import os
 
 from sklearn.cross_validation import KFold
+from sklearn.preprocessing import OneHotEncoder, LabelEncoder
 from keras.models import Sequential, Model
 from keras.layers.core import Dense, Dropout, Flatten, Reshape
 from keras.layers.normalization import BatchNormalization
@@ -34,13 +35,14 @@ from keras.preprocessing.sequence import pad_sequences
 DNN_EPOCHS = 10
 BATCH_SIZE = 50
 DNN_BN = False
-HIDDEN_UNITS = [40, 20, 5]
+HIDDEN_UNITS = [64, 32, 5]
 DROPOUT_RATE = 0
 LOAD_DATA = True
 
 if LOAD_DATA:
     data_folder = '../Data/'
     train = pd.read_csv(data_folder + 'train.csv')
+    train_len = train.index.size
     continus_columns = train.columns.to_series().select(lambda s: not s.endswith(('_cat', 'id', 'target', '_bin'))).values
     print('continus_columns: {}\n{}'.format(len(continus_columns), continus_columns))
     category_columns = train.columns.to_series().select(lambda s: s.endswith(('_cat'))).values
@@ -48,15 +50,29 @@ if LOAD_DATA:
     binary_columns = train.columns.to_series().select(lambda s: s.endswith(('_bin'))).values
     print('binary_columns: {}\n{}'.format(len(binary_columns), binary_columns))
     category_nunique = train[category_columns].nunique().values
-    feature_columns = list(continus_columns) + list(binary_columns)
+    continus_binary_columns = list(continus_columns) + list(binary_columns)
     train_label = train['target'].astype(np.int8)
-    train_category = train[category_columns].values
+    # train_category = train[category_columns].values
     train = train.drop(['target', 'id'], axis = 1)
-    category_indice = [i ]
+    train_columns = train.columns.values
+    category_indice = [i for i in range(len(train_columns)) if train_columns[i] in category_columns]
+    continus_binary_indice = [i for i in range(len(train_columns)) if train_columns[i] not in category_columns]
+    print ('category_indice: {}'.format(category_indice))
+    print ('continus_binary_indice: {}'.format(continus_binary_indice))
+
     test = pd.read_csv(data_folder + 'test.csv')
     test_id = test['id'].astype(np.int32).values
-    test_category = test[category_columns]
-    test = test.drop(['id'], axis = 1)[feature_columns].values
+    # test_category = test[category_columns]
+    test = test.drop(['id'], axis = 1)
+
+    df_all = pd.concat([train, test])
+    label_encoder = LabelEncoder()
+    onehot_encoder = OneHotEncoder(sparse = False)
+    integer_encoder = np.array([label_encoder.fit_transform(df_all[c].values) for c in category_columns]).T
+    category_onehot = onehot_encoder.fit_transform(integer_encoder)
+    df_array = np.c_[df_all[continus_binary_columns].values, category_onehot]
+    train = df_array[:train_len, :]
+    test = df_array[train_len:, :]
     # return train, train_label, test, test_id
 
 def eval_gini(y_true, y_prob):
@@ -143,13 +159,20 @@ def xgb_train(train_data, train_label, fold = 5, stacking = False, valide_data =
 
     return models, stacking_data, stacking_label, test_data
 
+def one_hot(x, num_classes):
+    return K.one_hot(x, num_classes)
+
 def create_embedding_layer():
+    input_list = []
     embedding_list = []
     for nunique in category_nunique:
-        input = Input(shape=(1, ), dtype='int8')
-        x_ohe = Lambda(k.one_hot, arguments={'nb_classes': nunique}, output_shape=(1, nunique))(input)
+        input_ = Input(shape=(1, ), dtype='int32')
+        # x_ohe = Lambda(K.one_hot, arguments={'num_classes': nunique})(input_)
+        x_ohe = Lambda(one_hot, arguments={'num_classes': nunique})(input_)
+        # x_ohe = K.one_hot(input_, nunique)
+        input_list.append(input_)
         embedding_list.append(x_ohe)
-    return concatenate(embedding_list, axis = 1)
+    return input_list, concatenate(embedding_list, axis = 2)
 
 
 def create_dnn(input_len):
@@ -167,11 +190,11 @@ def create_dnn(input_len):
     if DROPOUT_RATE > 0:
         model.add(Dropout(DROPOUT_RATE))
     # Third HN
-    model.add(Dense(HIDDEN_UNITS[2], activation='sigmoid'))
-    if DNN_BN:
-        model.add(BatchNormalization())
-    if DROPOUT_RATE > 0:
-        model.add(Dropout(DROPOUT_RATE))
+    #model.add(Dense(HIDDEN_UNITS[2], activation='sigmoid'))
+    #if DNN_BN:
+    #    model.add(BatchNormalization())
+    #if DROPOUT_RATE > 0:
+    #    model.add(Dropout(DROPOUT_RATE))
     model.add(Dense(1, activation='sigmoid'))
 
     # optimizer = SGD(lr=1e-3, decay=1e-6, momentum=0.9, nesterov=True)
@@ -184,14 +207,15 @@ def create_dnn(input_len):
 def create_embedding_model():
     """
     """
-    dense_input = Input(shape=(len(feature_columns),))
-    embedding_layer = create_embedding_layer()
+    dense_input = Input(shape=(len(continus_binary_indice),))
+    input_list, embedding_layer = create_embedding_layer()
+    embedding_layer = Flatten()(embedding_layer)
     merge_input = concatenate([dense_input, embedding_layer], axis = 1)
 
-    merge_len = len(feature_columns) + sum(category_nunique)
-    output = create_model(merge_len)(merge_input)
+    merge_len = len(continus_binary_indice) + sum(category_nunique)
+    output = create_dnn(merge_len)(merge_input)
 
-    model = Model([dense_input, aisle_id, department_id], output)
+    model = Model([dense_input] + input_list, output)
     # optimizer = RMSprop(lr=1e-3, rho = 0.9, epsilon = 1e-8)
     model.compile(optimizer=Adam(), loss='binary_crossentropy')
 
@@ -223,16 +247,20 @@ def keras_train(train_data, train_label, fold = 5, stacking = False, valide_data
             valide_part = valide_data
             valide_part_label = valide_label
 
-        # model = create_dnn(train_data.shape[1])
-        model = create_embedding_model()
+        model = create_dnn(train_data.shape[1])
+        # model = create_embedding_model()
 
         print('fold: %d th keras train :-)' % (num_fold))
         num_fold += 1
         callbacks = [
             EarlyStopping(monitor='val_loss', patience=3, verbose=0),
         ]
-        model.fit(train_part,
-                train_part_label, batch_size=BATCH_SIZE, epochs=DNN_EPOCHS,
+        #model.fit([train_part[:, continus_binary_indice]] + [train_part[:, i] for i in category_indice],
+        #        train_part_label, batch_size=BATCH_SIZE, epochs=DNN_EPOCHS,
+        #        shuffle=True, verbose=2,
+        #        validation_data=([valide_part[:, continus_binary_indice]] + [valide_part[:, i] for i in category_indice], valide_part_label)
+        #        , callbacks=callbacks)
+        model.fit(train_part, train_part_label, batch_size=BATCH_SIZE, epochs=DNN_EPOCHS,
                 shuffle=True, verbose=2,
                 validation_data=(valide_part, valide_part_label)
                 , callbacks=callbacks)
@@ -375,7 +403,7 @@ def gen_sub(models, merge_features, test_id, preds = None):
     submission.to_csv(sub_name, index=False)
 
 if __name__ == "__main__":
-    train, train_label, test, test_id = load_data()
+    # train, train_label, test, test_id = load_data()
     #model_l, stacking_data, stacking_label = lgbm_train(train, train_label, 5, True)
     #np.save('stacking_data', stacking_data)
     #np.save('stacking_label', stacking_label)
@@ -388,4 +416,4 @@ if __name__ == "__main__":
     #np.save('stacking_test_data_xgb', test)
     # model_l, stacking_data, stacking_label = lgbm_train(stacking_data, stacking_label, 5, False)
     model_k, stacking_data, stacking_label = keras_train(train, train_label, 5, False)
-    #gen_sub(model_l, test, test_id)
+    gen_sub(model_k, test, test_id)
