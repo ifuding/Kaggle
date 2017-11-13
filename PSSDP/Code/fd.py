@@ -31,11 +31,12 @@ from sklearn.metrics import log_loss
 from keras import __version__ as keras_version
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
+from resnet import res_net
 
 DNN_EPOCHS = 10
-BATCH_SIZE = 50
-DNN_BN = False
-HIDDEN_UNITS = [64, 32, 5]
+BATCH_SIZE = 125
+DNN_BN = True
+HIDDEN_UNITS = [32, 16, 8]
 DROPOUT_RATE = 0
 LOAD_DATA = True
 
@@ -178,23 +179,23 @@ def create_embedding_layer():
 def create_dnn(input_len):
     model = Sequential()
     # First HN
-    model.add(Dense(HIDDEN_UNITS[0], activation='sigmoid', input_dim = input_len))
+    model.add(Dense(HIDDEN_UNITS[0], activation='relu', input_dim = input_len))
     if DNN_BN:
         model.add(BatchNormalization())
     if DROPOUT_RATE > 0:
         model.add(Dropout(DROPOUT_RATE))
     # Second HN
-    model.add(Dense(HIDDEN_UNITS[1], activation='sigmoid'))
+    model.add(Dense(HIDDEN_UNITS[1], activation='relu'))
     if DNN_BN:
         model.add(BatchNormalization())
     if DROPOUT_RATE > 0:
         model.add(Dropout(DROPOUT_RATE))
     # Third HN
-    #model.add(Dense(HIDDEN_UNITS[2], activation='sigmoid'))
-    #if DNN_BN:
-    #    model.add(BatchNormalization())
-    #if DROPOUT_RATE > 0:
-    #    model.add(Dropout(DROPOUT_RATE))
+    model.add(Dense(HIDDEN_UNITS[2], activation='relu'))
+    if DNN_BN:
+        model.add(BatchNormalization())
+    if DROPOUT_RATE > 0:
+        model.add(Dropout(DROPOUT_RATE))
     model.add(Dense(1, activation='sigmoid'))
 
     # optimizer = SGD(lr=1e-3, decay=1e-6, momentum=0.9, nesterov=True)
@@ -224,7 +225,7 @@ def create_embedding_model():
 
 def keras_train(train_data, train_label, fold = 5, stacking = False, valide_data = None, valide_label = None):
     """
-    LGB Training
+    Keras Training
     """
     print("Over all training size:")
     print(train_data.shape)
@@ -247,7 +248,8 @@ def keras_train(train_data, train_label, fold = 5, stacking = False, valide_data
             valide_part = valide_data
             valide_part_label = valide_label
 
-        model = create_dnn(train_data.shape[1])
+        model = res_net((train_data.shape[1],))
+        # model = create_dnn(train_data.shape[1])
         # model = create_embedding_model()
 
         print('fold: %d th keras train :-)' % (num_fold))
