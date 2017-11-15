@@ -34,28 +34,43 @@ from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 
 
+def dense_bn_layer(input_tensor, hn_num):
+    """
+    """
+    x = Dense(hn_num)(input_tensor)
+    x = BatchNormalization()(x)
+    return x
+
+
+def dense_bn_act_layer(input_tensor, hn_num, act = 'relu'):
+    """
+    """
+    x = Dense(hn_num)(input_tensor)
+    x = BatchNormalization()(x)
+    x = Activation(act)(x)
+    return x
+
+
 def identity_block(input_tensor, hn_num):
     """
     """
-    x = Dense(hn_num * 3 / 2)(input_tensor)
-    x = BatchNormalization()(x)
-    x = Dense(hn_num)(x)
-    x = BatchNormalization()(x)
-    x = Add()([x, input_tensor])
+    adjust_layer = dense_bn_layer(input_tensor, hn_num)
+    x = Activation('relu')(adjust_layer)
+    x = dense_bn_act_layer(x, hn_num * 3 / 2)
+    x = dense_bn_layer(x, hn_num)
+    x = Add()([x, adjust_layer])
     x = Activation('relu')(x)
     return x
 
 
-def res_net(input_shape, hns = [16, 8, 4], classes = 2):
+def res_net(input_shape, hns = [16, 8, 4, 7], classes = 2):
     """
     """
     inputs = Input(shape=input_shape)
-    x = Dense(hns[0], activation='relu')(inputs)
-    x = identity_block(x, hns[0])
-    x = Dense(hns[1], activation='relu')(inputs)
+    x = identity_block(inputs, hns[0])
     x = identity_block(x, hns[1])
-    x = Dense(hns[2], activation='relu')(inputs)
     x = identity_block(x, hns[2])
+    # x = identity_block(x, hns[3])
     if classes == 2:
         x = Dense(1, activation='sigmoid')(x)
     else:
