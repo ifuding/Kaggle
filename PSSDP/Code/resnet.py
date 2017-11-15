@@ -15,6 +15,7 @@ import tensorflow as tf
 # import multiprocessing as mp
 import gensim
 import os
+from lcc_sample import lcc_sample
 
 from sklearn.cross_validation import KFold
 from sklearn.preprocessing import OneHotEncoder, LabelEncoder
@@ -63,7 +64,7 @@ def identity_block(input_tensor, hn_num):
     return x
 
 
-def res_net(input_shape, hns = [16, 8, 4, 7], classes = 2):
+def res_net(input_shape, hns = [10, 6, 4, 7], classes = 2):
     """
     """
     inputs = Input(shape=input_shape)
@@ -76,6 +77,66 @@ def res_net(input_shape, hns = [16, 8, 4, 7], classes = 2):
     else:
         x = Dense(classes, activation='softmax')(x)
     model = Model(inputs, x)
+    model.compile(optimizer=Adam(), loss='binary_crossentropy')
+
+    return model
+
+
+def create_embedding_layer():
+    input_list = []
+    embedding_list = []
+    for nunique in category_nunique:
+        input_ = Input(shape=(1, ), dtype='int32')
+        # x_ohe = Lambda(K.one_hot, arguments={'num_classes': nunique})(input_)
+        x_ohe = Lambda(one_hot, arguments={'num_classes': nunique})(input_)
+        # x_ohe = K.one_hot(input_, nunique)
+        input_list.append(input_)
+        embedding_list.append(x_ohe)
+    return input_list, concatenate(embedding_list, axis = 2)
+
+
+def create_dnn(input_len, HIDDEN_UNITS = [4, 4, 4], DNN_BN = False, DROPOUT_RATE = 0):
+    model = Sequential()
+    # First HN
+    model.add(Dense(HIDDEN_UNITS[0], activation='relu', input_dim = input_len))
+    if DNN_BN:
+        model.add(BatchNormalization())
+    if DROPOUT_RATE > 0:
+        model.add(Dropout(DROPOUT_RATE))
+    # Second HN
+    model.add(Dense(HIDDEN_UNITS[1], activation='relu'))
+    if DNN_BN:
+        model.add(BatchNormalization())
+    if DROPOUT_RATE > 0:
+        model.add(Dropout(DROPOUT_RATE))
+    # Third HN
+    model.add(Dense(HIDDEN_UNITS[2], activation='relu'))
+    if DNN_BN:
+        model.add(BatchNormalization())
+    if DROPOUT_RATE > 0:
+        model.add(Dropout(DROPOUT_RATE))
+    model.add(Dense(1, activation='sigmoid'))
+
+    # optimizer = SGD(lr=1e-3, decay=1e-6, momentum=0.9, nesterov=True)
+    optimizer = RMSprop(lr=1e-3, rho = 0.9, epsilon = 1e-8)
+    model.compile(optimizer=Adam(), loss='binary_crossentropy')
+
+    return model
+
+
+def create_embedding_model():
+    """
+    """
+    dense_input = Input(shape=(len(continus_binary_indice),))
+    input_list, embedding_layer = create_embedding_layer()
+    embedding_layer = Flatten()(embedding_layer)
+    merge_input = concatenate([dense_input, embedding_layer], axis = 1)
+
+    merge_len = len(continus_binary_indice) + sum(category_nunique)
+    output = create_dnn(merge_len)(merge_input)
+
+    model = Model([dense_input] + input_list, output)
+    # optimizer = RMSprop(lr=1e-3, rho = 0.9, epsilon = 1e-8)
     model.compile(optimizer=Adam(), loss='binary_crossentropy')
 
     return model

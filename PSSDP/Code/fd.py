@@ -14,6 +14,9 @@ import tensorflow as tf
 # import multiprocessing as mp
 import gensim
 import os
+from lcc_sample import lcc_sample
+from scipy.special import logit
+from scipy.special import expit as sigmoid
 
 from sklearn.cross_validation import KFold
 from sklearn.preprocessing import OneHotEncoder, LabelEncoder
@@ -31,9 +34,9 @@ from sklearn.metrics import log_loss
 from keras import __version__ as keras_version
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
-from resnet import res_net
+from resnet import res_net, create_dnn
 
-DNN_EPOCHS = 20
+DNN_EPOCHS = 1
 BATCH_SIZE = 125
 DNN_BN = True
 HIDDEN_UNITS = [32, 16, 8]
@@ -42,14 +45,14 @@ LOAD_DATA = True
 
 if LOAD_DATA:
     data_folder = '../Data/'
-    train = pd.read_csv(data_folder + 'train.csv')#.iloc[:1000]
+    train = pd.read_csv(data_folder + 'train.csv').iloc[:1000]
     train_len = train.index.size
     continus_columns = train.columns.to_series().select(lambda s: not s.endswith(('_cat', 'id', 'target', '_bin'))).values
-    print('continus_columns: {}\n{}'.format(len(continus_columns), continus_columns))
+    #print('continus_columns: {}\n{}'.format(len(continus_columns), continus_columns))
     category_columns = train.columns.to_series().select(lambda s: s.endswith(('_cat'))).values
-    print('category_columns: {}\n{}'.format(len(category_columns), category_columns))
+    #print('category_columns: {}\n{}'.format(len(category_columns), category_columns))
     binary_columns = train.columns.to_series().select(lambda s: s.endswith(('_bin'))).values
-    print('binary_columns: {}\n{}'.format(len(binary_columns), binary_columns))
+    #print('binary_columns: {}\n{}'.format(len(binary_columns), binary_columns))
     category_nunique = train[category_columns].nunique().values
     continus_binary_columns = list(continus_columns) + list(binary_columns)
     train_label = train['target'].astype(np.int8)
@@ -58,10 +61,10 @@ if LOAD_DATA:
     train_columns = train.columns.values
     category_indice = [i for i in range(len(train_columns)) if train_columns[i] in category_columns]
     continus_binary_indice = [i for i in range(len(train_columns)) if train_columns[i] not in category_columns]
-    print ('category_indice: {}'.format(category_indice))
-    print ('continus_binary_indice: {}'.format(continus_binary_indice))
+    #print ('category_indice: {}'.format(category_indice))
+    #print ('continus_binary_indice: {}'.format(continus_binary_indice))
 
-    test = pd.read_csv(data_folder + 'test.csv')#.iloc[:1000]
+    test = pd.read_csv(data_folder + 'test.csv').iloc[:1000]
     test_id = test['id'].astype(np.int32).values
     # test_category = test[category_columns]
     test = test.drop(['id'], axis = 1)
@@ -119,74 +122,14 @@ def xgb_train(train_part, train_part_label, valide_part, valide_part_label, fold
     return model
 
 
-def create_embedding_layer():
-    input_list = []
-    embedding_list = []
-    for nunique in category_nunique:
-        input_ = Input(shape=(1, ), dtype='int32')
-        # x_ohe = Lambda(K.one_hot, arguments={'num_classes': nunique})(input_)
-        x_ohe = Lambda(one_hot, arguments={'num_classes': nunique})(input_)
-        # x_ohe = K.one_hot(input_, nunique)
-        input_list.append(input_)
-        embedding_list.append(x_ohe)
-    return input_list, concatenate(embedding_list, axis = 2)
-
-
-def create_dnn(input_len):
-    model = Sequential()
-    # First HN
-    model.add(Dense(HIDDEN_UNITS[0], activation='relu', input_dim = input_len))
-    if DNN_BN:
-        model.add(BatchNormalization())
-    if DROPOUT_RATE > 0:
-        model.add(Dropout(DROPOUT_RATE))
-    # Second HN
-    model.add(Dense(HIDDEN_UNITS[1], activation='relu'))
-    if DNN_BN:
-        model.add(BatchNormalization())
-    if DROPOUT_RATE > 0:
-        model.add(Dropout(DROPOUT_RATE))
-    # Third HN
-    model.add(Dense(HIDDEN_UNITS[2], activation='relu'))
-    if DNN_BN:
-        model.add(BatchNormalization())
-    if DROPOUT_RATE > 0:
-        model.add(Dropout(DROPOUT_RATE))
-    model.add(Dense(1, activation='sigmoid'))
-
-    # optimizer = SGD(lr=1e-3, decay=1e-6, momentum=0.9, nesterov=True)
-    optimizer = RMSprop(lr=1e-3, rho = 0.9, epsilon = 1e-8)
-    model.compile(optimizer=Adam(), loss='binary_crossentropy')
-
-    return model
-
-
-def create_embedding_model():
-    """
-    """
-    dense_input = Input(shape=(len(continus_binary_indice),))
-    input_list, embedding_layer = create_embedding_layer()
-    embedding_layer = Flatten()(embedding_layer)
-    merge_input = concatenate([dense_input, embedding_layer], axis = 1)
-
-    merge_len = len(continus_binary_indice) + sum(category_nunique)
-    output = create_dnn(merge_len)(merge_input)
-
-    model = Model([dense_input] + input_list, output)
-    # optimizer = RMSprop(lr=1e-3, rho = 0.9, epsilon = 1e-8)
-    model.compile(optimizer=Adam(), loss='binary_crossentropy')
-
-    return model
-
-
 def keras_train(train_part, train_part_label, valide_part, valide_part_label, fold_seed):
     """
     Keras Training
     """
     print("-----Keras training-----")
 
-    model = res_net((train_part.shape[1],))
-    # model = create_dnn(train_data.shape[1])
+    # model = res_net((train_part.shape[1],))
+    model = create_dnn(train_part.shape[1])
     # model = create_embedding_model()
 
     callbacks = [
@@ -206,9 +149,58 @@ def keras_train(train_part, train_part_label, valide_part, valide_part_label, fo
     return model
 
 
+def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fold_seed,
+        fold = 5, train_weight = None, valide_weight = None):
+    """
+    LGBM Training
+    """
+    print("-----LGBM training-----")
+
+    d_train = lgb.Dataset(train_part, train_part_label, train_weight)
+    d_valide = lgb.Dataset(valide_part, valide_part_label, valide_weight)
+    params = {
+            'task': 'train',
+            'boosting_type': 'gbdt',
+            'objective': 'binary',
+            'metric': {'binary_logloss'},
+          #  'feature_fraction': 0.9,
+          #  'bagging_fraction': 0.95,
+          #  'bagging_freq': 5,
+            'num_leaves': 60, #40, # 60,
+          #  'min_sum_hessian_in_leaf': 20,
+            'max_depth': 12, #6, # 10,
+            'learning_rate': 0.028, # 0.025,
+           'feature_fraction': 0.35,#0.35, # 0.6
+            'verbose': 0,
+          #   'valid_sets': [d_valide],
+            'num_boost_round': 400, #381,
+            'feature_fraction_seed': fold_seed,
+            #'bagging_fraction': 0.9,
+            # 'bagging_freq': 15,
+            #'bagging_seed': fold_seed,
+            'early_stopping_round': 10,
+            # 'random_state': 10
+            # 'verbose_eval': 20
+            #'min_data_in_leaf': 665
+        }
+
+    bst = lgb.train(
+                    params ,
+                    d_train,
+                    verbose_eval = 50,
+                    valid_sets = [d_train, d_valide],
+                    #feval = gini_lgbm
+                    #num_boost_round = 1
+                    )
+    # cv_result = lgb.cv(params, d_train, nfold=fold) #, feval = gini_lgbm)
+    # pd.DataFrame(cv_result).to_csv('cv_result', index = False)
+    # exit(0)
+    return bst
+
+
 def nfold_train(train_data, train_label, fold = 5, model_types = None,
             stacking = False, valide_data = None, valide_label = None,
-            test_data = None):
+            test_data = None, train_weight = None, valide_weight = None):
     """
     nfold Training
     """
@@ -229,11 +221,16 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
             train_part_label = train_label[train_index]
             valide_part = train_data[test_index]
             valide_part_label = train_label[test_index]
+            if train_weight is not None:
+                train_part_weight = train_weight[train_index]
+                valide_part_weight = train_weight[test_index]
         else:
             train_part = train_data
             train_part_label = train_label
             valide_part = valide_data
             valide_part_label = valide_label
+            if train_weight is not None:
+                train_part_weight, valide_part_weight = train_weight, valide_weight
         onefold_models = []
         for model_type in model_types:
             if model_type == 'k':
@@ -242,6 +239,10 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
             elif model_type == 'x':
                 model = xgb_train(train_part, train_part_label, valide_part, valide_part_label, num_fold)
                 onefold_models.append((model, 'x'))
+            elif model_type == 'l':
+                model = lgbm_train(train_part, train_part_label, valide_part, valide_part_label, num_fold,
+                        fold, train_part_weight, valide_part_weight)
+                onefold_models.append((model, 'l'))
         if stacking:
             valide_pred = np.array([model_eval(model[0], model[1], valide_part) for model in onefold_models]).T
             test_pred = np.array([model_eval(model[0], model[1], test_data) for model in onefold_models]).T
@@ -255,94 +256,13 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
                 test_preds += test_pred
             print('stacking_data shape: {0}'.format(stacking_data.shape))
             print('stacking_label shape: {0}'.format(stacking_label.shape))
-        models.append(onefold_models)
+        models.append(onefold_models[0])
         num_fold += 1
+        break
     if stacking:
         test_preds /= fold
         test_data = np.c_[test_data, test_preds]
     return models, stacking_data, stacking_label, test_data
-
-
-def lgbm_train(train_data, train_label, fold = 5, stacking = False, valide_data = None, valide_label = None):
-    """
-    LGB Training
-    """
-    print("Over all training size:")
-    print(train_data.shape)
-
-    kf = KFold(len(train_label), n_folds=fold, shuffle=True)
-
-    stacking_data = None
-    stacking_label = None
-    num_fold = 0
-    models = []
-    for train_index, test_index in kf:
-        if valide_label is None:
-            train_part = train_data[train_index]
-            train_part_label = train_label[train_index]
-            valide_part = train_data[test_index]
-            valide_part_label = train_label[test_index]
-        else:
-            train_part = train_data
-            train_part_label = train_label
-            valide_part = valide_data
-            valide_part_label = valide_label
-
-        d_train = lgb.Dataset(train_part, train_part_label)
-        d_valide = lgb.Dataset(valide_part, valide_part_label)
-        params = {
-            'task': 'train',
-            'boosting_type': 'gbdt',
-            'objective': 'binary',
-            'metric': {'binary_logloss'},
-          #  'feature_fraction': 0.9,
-          #  'bagging_fraction': 0.95,
-          #  'bagging_freq': 5,
-            'num_leaves': 60, #40, # 60,
-          #  'min_sum_hessian_in_leaf': 20,
-            'max_depth': 12, #6, # 10,
-            'learning_rate': 0.028, # 0.025,
-           'feature_fraction': 0.35,#0.35, # 0.6
-            'verbose': 0,
-          #   'valid_sets': [d_valide],
-            'num_boost_round': 400, #381,
-            'feature_fraction_seed': num_fold,
-            'bagging_fraction': 0.9,
-            # 'bagging_freq': 15,
-            'bagging_seed': num_fold,
-            # 'early_stopping_round': 10,
-            # 'random_state': 10
-            # 'verbose_eval': 20
-            #'min_data_in_leaf': 665
-        }
-
-        print('fold: %d th light GBM train :-)' % (num_fold))
-        num_fold += 1
-        #bst = lgb.train(
-        #                params ,
-        #                d_train,
-        #                verbose_eval = 50,
-        #                valid_sets = [d_train, d_valide],
-        #                #feval = gini_lgbm
-        #                #num_boost_round = 1
-        #                )
-        if stacking:
-            if stacking_data is None:
-                valide_pred = model_eval(bst, 'l', valide_part)
-                stacking_data = np.c_[valide_part, valide_pred]
-                stacking_label = valide_part_label
-            else:
-                valide_pred = model_eval(bst, 'l', valide_part)
-                stacking_data = np.append(stacking_data, np.c_[valide_part, valide_pred], axis = 0)
-                stacking_label = np.append(stacking_label, valide_part_label, axis = 0)
-            print('stacking_data shape: {0}'.format(stacking_data.shape))
-            print('stacking_label shape: {0}'.format(stacking_label.shape))
-        cv_result = lgb.cv(params, d_train, nfold=fold) #, feval = gini_lgbm)
-        pd.DataFrame(cv_result).to_csv('cv_result', index = False)
-        exit(0)
-        models.append((bst, 'l'))
-
-    return models, stacking_data, stacking_label
 
 
 def model_eval(model, model_type, data_frame):
@@ -368,6 +288,13 @@ def models_eval(models, data):
         else:
             preds += pred
     preds /= len(models)
+    return preds
+
+
+def lcc_ensemble(pilot_models, sample_models, data):
+    pilot_preds = models_eval(pilot_models, data)
+    sample_preds = models_eval(sample_models, data)
+    preds = sigmoid(logit(pilot_preds) + logit(sample_preds))
     return preds
 
 
@@ -397,8 +324,13 @@ if __name__ == "__main__":
     #np.save('stacking_label_xgb', stacking_label)
     #np.save('stacking_test_data_xgb', test)
     #model_l, stacking_data, stacking_label = lgbm_train(stacking_data, stacking_label, 5, False, stacking_data, stacking_label)
-    models, stacking_data, stacking_label, test = nfold_train(train, train_label, 5, ['k'], False, None, None, test)
+    pilot_models, stacking_data, stacking_label, test = nfold_train(train, train_label, 5, ['k'], False, None, None, test)
+    pilot_preds = models_eval(pilot_models, train)
+    sample_data, sample_lable, weight = lcc_sample(train_label, pilot_preds, train, 5)
+    print weight
+    sample_models, stacking_data, stacking_label, test = nfold_train(sample_data, sample_lable, 5, ['l'], False, None, None, test, weight)
+    lcc_preds = lcc_ensemble(pilot_models, sample_models, test)
     #np.save('stacking_data_kx', stacking_data)
     #np.save('stacking_label_kx', stacking_label)
     #np.save('stacking_test_data_kx', test)
-    # gen_sub(model_l, test, test_id)
+    gen_sub(pilot_models, test, test_id, lcc_preds)
