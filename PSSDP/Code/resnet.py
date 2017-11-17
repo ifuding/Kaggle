@@ -35,24 +35,24 @@ from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 
 
-def dense_bn_layer(input_tensor, hn_num):
+def dense_bn_layer(input_tensor, hn_num, name = None):
+    """
+    """
+    x = Dense(hn_num)(input_tensor)
+    x = BatchNormalization(name = name)(x)
+    return x
+
+
+def dense_bn_act_layer(input_tensor, hn_num, name = None, act = 'relu'):
     """
     """
     x = Dense(hn_num)(input_tensor)
     x = BatchNormalization()(x)
+    x = Activation(act, name = name)(x)
     return x
 
 
-def dense_bn_act_layer(input_tensor, hn_num, act = 'relu'):
-    """
-    """
-    x = Dense(hn_num)(input_tensor)
-    x = BatchNormalization()(x)
-    x = Activation(act)(x)
-    return x
-
-
-def identity_block(input_tensor, hn_num):
+def identity_block(input_tensor, hn_num, name = None):
     """
     """
     adjust_layer = dense_bn_layer(input_tensor, hn_num)
@@ -60,17 +60,17 @@ def identity_block(input_tensor, hn_num):
     x = dense_bn_act_layer(x, hn_num * 3 / 2)
     x = dense_bn_layer(x, hn_num)
     x = Add()([x, adjust_layer])
-    x = Activation('relu')(x)
+    x = Activation('relu', name = name)(x)
     return x
 
 
-def res_net(input_shape, hns = [10, 6, 4, 7], classes = 2):
+def res_net(input_shape, hns = [8, 6, 4, 7], classes = 2):
     """
     """
     inputs = Input(shape=input_shape)
-    x = identity_block(inputs, hns[0])
-    x = identity_block(x, hns[1])
-    x = identity_block(x, hns[2])
+    x = identity_block(inputs, hns[0], name = 'block0')
+    x = identity_block(x, hns[1], name = 'block1')
+    x = identity_block(x, hns[2], name = 'block2')
     # x = identity_block(x, hns[3])
     if classes == 2:
         x = Dense(1, activation='sigmoid')(x)
@@ -95,30 +95,22 @@ def create_embedding_layer():
     return input_list, concatenate(embedding_list, axis = 2)
 
 
-def create_dnn(input_len, HIDDEN_UNITS = [4, 4, 4], DNN_BN = False, DROPOUT_RATE = 0):
-    model = Sequential()
-    # First HN
-    model.add(Dense(HIDDEN_UNITS[0], activation='relu', input_dim = input_len))
-    if DNN_BN:
-        model.add(BatchNormalization())
-    if DROPOUT_RATE > 0:
-        model.add(Dropout(DROPOUT_RATE))
-    # Second HN
-    model.add(Dense(HIDDEN_UNITS[1], activation='relu'))
-    if DNN_BN:
-        model.add(BatchNormalization())
-    if DROPOUT_RATE > 0:
-        model.add(Dropout(DROPOUT_RATE))
-    # Third HN
-    model.add(Dense(HIDDEN_UNITS[2], activation='relu'))
-    if DNN_BN:
-        model.add(BatchNormalization())
-    if DROPOUT_RATE > 0:
-        model.add(Dropout(DROPOUT_RATE))
-    model.add(Dense(1, activation='sigmoid'))
+def create_dnn(input_len, HIDDEN_UNITS = [20, 10, 4], DNN_BN = False, DROPOUT_RATE = 0):
+    inputs = Input(shape=(input_len,))
+    x = dense_bn_act_layer(inputs, HIDDEN_UNITS[0], name = 'hn1')
+    x = dense_bn_act_layer(x, HIDDEN_UNITS[1], name = 'hn2')
+    # x = dense_bn_act_layer(x, HIDDEN_UNITS[2], name = 'hn3')
+    x = dense_bn_act_layer(x, 1, name = 'prob', act = 'sigmoid')
+    ## First HN
+    #model.add(Dense(HIDDEN_UNITS[0], activation='relu', input_dim = input_len))
+    #if DNN_BN:
+    #    model.add(BatchNormalization())
+    #if DROPOUT_RATE > 0:
+    #    model.add(Dropout(DROPOUT_RATE))
 
     # optimizer = SGD(lr=1e-3, decay=1e-6, momentum=0.9, nesterov=True)
     optimizer = RMSprop(lr=1e-3, rho = 0.9, epsilon = 1e-8)
+    model = Model(inputs, x)
     model.compile(optimizer=Adam(), loss='binary_crossentropy')
 
     return model

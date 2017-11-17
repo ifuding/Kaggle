@@ -8,11 +8,11 @@ import lightgbm as lgb
 from time import gmtime, strftime
 import numpy.random as rng
 # from multiprocessing.dummy import Pool
-import h5py
+# import h5py
 # import concurrent.futures
 import tensorflow as tf
 # import multiprocessing as mp
-import gensim
+# import gensim
 import os
 from lcc_sample import lcc_sample
 from scipy.special import logit
@@ -36,7 +36,7 @@ from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 from resnet import res_net, create_dnn
 
-DNN_EPOCHS = 1
+DNN_EPOCHS = 20
 BATCH_SIZE = 125
 DNN_BN = True
 HIDDEN_UNITS = [32, 16, 8]
@@ -76,6 +76,8 @@ if LOAD_DATA:
     category_onehot = onehot_encoder.fit_transform(integer_encoder)
     # df_array = np.c_[df_all[continus_binary_columns].values, category_onehot]
     df_array = np.c_[df_all.values, category_onehot]
+    feature_name = list(df_all.columns.values)
+    feature_name += ['cat_one_hot_' + str(i) for i in range(category_onehot.shape[1])]
     train = df_array[:train_len, :]
     test = df_array[train_len:, :]
     # return train, train_label, test, test_id
@@ -128,8 +130,8 @@ def keras_train(train_part, train_part_label, valide_part, valide_part_label, fo
     """
     print("-----Keras training-----")
 
-    # model = res_net((train_part.shape[1],))
-    model = create_dnn(train_part.shape[1])
+    model = res_net((train_part.shape[1],))
+    # model = create_dnn(train_part.shape[1])
     # model = create_embedding_model()
 
     callbacks = [
@@ -168,12 +170,12 @@ def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fol
           #  'bagging_freq': 5,
             'num_leaves': 60, #60, #40, # 60,
           #  'min_sum_hessian_in_leaf': 20,
-            'max_depth': 6,#12, #6, # 10,
+            'max_depth': 10,#12, #6, # 10,
             'learning_rate': 0.028, # 0.025,
            'feature_fraction': 0.5,#0.35, # 0.6
             'verbose': 0,
           #   'valid_sets': [d_valide],
-            'num_boost_round': 400, #381,
+            'num_boost_round': 400, #361,
             'feature_fraction_seed': fold_seed,
             #'bagging_fraction': 0.9,
             # 'bagging_freq': 15,
@@ -187,11 +189,15 @@ def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fol
     #bst = lgb.train(
     #                params ,
     #                d_train,
-    #                verbose_eval = 10,
+    #                verbose_eval = 50,
     #                valid_sets = [d_train, d_valide],
+    #                feature_name=['f' + str(i + 1) for i in range(train_part.shape[1])],
     #                #feval = gini_lgbm
     #                #num_boost_round = 1
     #                )
+    #feature_imp = bst.feature_importance(importance_type = 'gain')
+    #print (feature_name[np.argsort(feature_imp)])
+    #exit(0)
     cv_result = lgb.cv(params, d_train, nfold=fold) #, feval = gini_lgbm)
     pd.DataFrame(cv_result).to_csv('cv_result', index = False)
     exit(0)
@@ -235,17 +241,27 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
         for model_type in model_types:
             if model_type == 'k':
                 model = keras_train(train_part, train_part_label, valide_part, valide_part_label, num_fold)
-                onefold_models.append((model, 'k'))
+                block0 = Model(inputs = model.input, \
+                            outputs = model.get_layer('block0').output)
+                onefold_models.append((block0, 'k'))
+                block1 = Model(inputs = model.input, \
+                            outputs = model.get_layer('block1').output)
+                onefold_models.append((block1, 'k'))
+                block2 = Model(inputs = model.input, \
+                            outputs = model.get_layer('block2').output)
+                onefold_models.append((block2, 'k'))
             elif model_type == 'x':
                 model = xgb_train(train_part, train_part_label, valide_part, valide_part_label, num_fold)
                 onefold_models.append((model, 'x'))
             elif model_type == 'l':
                 model = lgbm_train(train_part, train_part_label, valide_part, valide_part_label, num_fold,
-                        fold, train_part_weight, valide_part_weight)
+                        fold)
                 onefold_models.append((model, 'l'))
         if stacking:
-            valide_pred = np.array([model_eval(model[0], model[1], valide_part) for model in onefold_models]).T
-            test_pred = np.array([model_eval(model[0], model[1], test_data) for model in onefold_models]).T
+            valide_pred = [model_eval(model[0], model[1], valide_part) for model in onefold_models]
+            valide_pred = reduce((lambda x, y: np.c_[x, y]), valide_pred)
+            test_pred = [model_eval(model[0], model[1], test_data) for model in onefold_models]
+            test_pred = reduce((lambda x, y: np.c_[x, y]), test_pred)
             if stacking_data is None:
                 stacking_data = np.c_[valide_part, valide_pred]
                 stacking_label = valide_part_label
@@ -258,7 +274,6 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
             print('stacking_label shape: {0}'.format(stacking_label.shape))
         models.append(onefold_models[0])
         num_fold += 1
-        break
     if stacking:
         test_preds /= fold
         test_data = np.c_[test_data, test_preds]
@@ -276,7 +291,7 @@ def model_eval(model, model_type, data_frame):
         print("ToDO")
     elif model_type == 'x':
         preds = model.predict(xgb.DMatrix(data_frame), ntree_limit=model.best_ntree_limit)
-    return preds.reshape(data_frame.shape[0])
+    return preds.reshape((data_frame.shape[0], -1))
 
 
 def models_eval(models, data):
@@ -316,26 +331,35 @@ if __name__ == "__main__":
     # model_l, stacking_data, stacking_label = lgbm_train(train, train_label, 5, False, train, train_label)
     #np.save('stacking_data', stacking_data)
     #np.save('stacking_label', stacking_label)
-    #stacking_data = np.load('stacking_data_kx.npy')
-    #stacking_label = np.load('stacking_label_kx.npy')
-    #test = np.load('stacking_test_data_kx.npy')
     #model_x, stacking_data, stacking_label, test = xgb_train(train, train_label, 5, True, None, None, test)
-    #np.save('stacking_data_xgb', stacking_data)
-    #np.save('stacking_label_xgb', stacking_label)
-    #np.save('stacking_test_data_xgb', test)
     #model_l, stacking_data, stacking_label = lgbm_train(stacking_data, stacking_label, 5, False, stacking_data, stacking_label)
-    #pilot_models, stacking_data, stacking_label, test = nfold_train(train, train_label, 5, ['k'], False, None, None, test)
+    models, stacking_data, stacking_label, test = nfold_train(train, train_label, 5, ['k'], True, None, None, test)
+    np.save('stacking_data_keras', stacking_data)
+    np.save('stacking_label_keras', stacking_label)
+    np.save('stacking_test_data_keras', test)
+    #stacking_data = np.load('stacking_data_keras.npy')
+    #stacking_label = np.load('stacking_label_keras.npy')
+    #test = np.load('stacking_test_data_keras.npy')
+    feature_name += ['dnn_emb_' + str(i) for i in range(stacking_data.shape[1] - train.shape[1])]
+    feature_name = np.array(feature_name)
+    # print('Before shuffle feature name: {}'.format(feature_name))
+    feature_ind = np.array(range(stacking_data.shape[1]))
+    np.random.shuffle(feature_ind)
+    stacking_data = stacking_data[:, feature_ind]
+    test = test[:, feature_ind]
+    feature_name = feature_name[feature_ind]
+    # print('After shuffle feature name: {}'.format(feature_name))
     #pilot_preds = models_eval(pilot_models, train)
     #sample_data, sample_label, weight = lcc_sample(train_label, pilot_preds, train, 2)
     #np.save('lcc_sample_data', sample_data)
     #np.save('lcc_sample_label', sample_label)
     #np.save('lcc_sample_weight', weight)
-    sample_data = np.load('lcc_sample_data.npy')
-    sample_label = np.load('lcc_sample_label.npy')
-    weight = np.load('lcc_sample_weight.npy')
-    sample_models, stacking_data, stacking_label, test = nfold_train(sample_data, sample_label, 5, ['l'], False, sample_data, sample_label, test, weight)
+    #sample_data = np.load('lcc_sample_data.npy')
+    #sample_label = np.load('lcc_sample_label.npy')
+    #weight = np.load('lcc_sample_weight.npy')
+    models, stacking_data, stacking_label, test = nfold_train(stacking_data, stacking_label, 5, ['l'], False, stacking_data, stacking_label, test)
     # lcc_preds = lcc_ensemble(pilot_models, sample_models, test)
     #np.save('stacking_data_kx', stacking_data)
     #np.save('stacking_label_kx', stacking_label)
     #np.save('stacking_test_data_kx', test)
-    #gen_sub(pilot_models, test, test_id, lcc_preds)
+    #gen_sub(models, test, test_id)
