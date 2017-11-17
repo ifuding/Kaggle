@@ -36,7 +36,7 @@ from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 from resnet import res_net, create_dnn
 
-DNN_EPOCHS = 20
+DNN_EPOCHS = 30
 BATCH_SIZE = 125
 DNN_BN = True
 HIDDEN_UNITS = [32, 16, 8]
