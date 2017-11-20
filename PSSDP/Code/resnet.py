@@ -35,11 +35,14 @@ from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 
 
+DROPOUT_RATE = 0.9
+
 def dense_bn_layer(input_tensor, hn_num, name = None):
     """
     """
     x = Dense(hn_num)(input_tensor)
     x = BatchNormalization(name = name)(x)
+    x = Dropout(DROPOUT_RATE)(x)
     return x
 
 
@@ -48,6 +51,7 @@ def dense_bn_act_layer(input_tensor, hn_num, name = None, act = 'relu'):
     """
     x = Dense(hn_num)(input_tensor)
     x = BatchNormalization()(x)
+    x = Dropout(DROPOUT_RATE)(x)
     x = Activation(act, name = name)(x)
     return x
 
@@ -81,7 +85,8 @@ def res_net(input_shape, hns = [8, 6, 4, 4], classes = 2):
     """
     """
     inputs = Input(shape=input_shape)
-    x = identity_block(inputs, hns[0], name = 'block0')
+    x = BatchNormalization()(inputs)
+    x = identity_block(x, hns[0], name = 'block0')
     x = identity_block(x, hns[1], name = 'block1')
     x = identity_block(x, hns[2], name = 'block2')
     x = identity_block(x, hns[3], name = 'block3')
@@ -117,14 +122,33 @@ def boosting_dnn(input_shape, hns = [8, 6, 4, 7], classes = 2):
     return model
 
 
-def boosting_res_net(input_shape, hns = [8, 6, 4, 7], classes = 2):
+def eval_gini(y_true, y_prob):
+    print(type(y_true))
+    print(type(y_prob))
+    sess = tf.Session()
+    with sess.as_default():
+        y_true = y_true[np.argsort(y_prob.eval())]
+    ntrue = 0
+    gini = 0
+    delta = 0
+    n = len(y_true)
+    for i in range(n-1, -1, -1):
+        y_i = y_true[i]
+        ntrue += y_i
+        gini += y_i * delta
+        delta += 1 - y_i
+    gini = 1 - 2 * gini / (ntrue * (n - ntrue))
+    return gini
+
+
+def boosting_res_net(input_shape, hns = [8, 6, 4, 4], classes = 2):
     """
     """
     boost_input = Input(shape=(1,))
     # res_module
     res_shape = (input_shape[0] - 1,)
     res_inputs = Input(shape = res_shape)
-    res_model = res_net(res_shape)
+    res_model = res_net(res_shape, hns)
     res_module = Model(res_model.input, res_model.get_layer('block2').output)(res_inputs)
     res_pre_sigmoid = Dense(1)(res_module)
     # boost
@@ -132,7 +156,7 @@ def boosting_res_net(input_shape, hns = [8, 6, 4, 7], classes = 2):
     proba = Activation('sigmoid')(pre_sigmoid)
 
     model = Model([res_inputs, boost_input], proba)
-    model.compile(optimizer=Nadam(lr = 0.001), loss='binary_crossentropy')
+    model.compile(optimizer=Nadam(lr = 0.001), loss='binary_crossentropy', metrics = [eval_gini])
 
     return model
 

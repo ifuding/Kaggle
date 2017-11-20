@@ -131,8 +131,8 @@ def keras_train(train_part, train_part_label, valide_part, valide_part_label, fo
     print("-----Keras training-----")
 
     # model = boosting_dnn((train_part.shape[1],))
-    model = boosting_parallel_res_net((train_part.shape[1],))
-    #model = boosting_res_net((train_part.shape[1],))
+    # model = boosting_parallel_res_net((train_part.shape[1],))
+    model = boosting_res_net((train_part.shape[1],))
     # model = res_net((train_part.shape[1],))
     # model = create_dnn(train_part.shape[1])
     # model = create_embedding_model()
@@ -143,7 +143,7 @@ def keras_train(train_part, train_part_label, valide_part, valide_part_label, fo
     valide_boost_loss = log_loss(valide_part_label, valide_boost_pred)
     print('-----valide boost log loss: {}'.format(valide_boost_loss))
     callbacks = [
-            EarlyStopping(monitor='val_loss', patience=3, verbose=0),
+            EarlyStopping(monitor='val_loss', patience=50, verbose=0),
             ]
 
     #model.fit([train_part[:, continus_binary_indice]] + [train_part[:, i] for i in category_indice],
@@ -354,8 +354,14 @@ if __name__ == "__main__":
     stacking_data = np.load('stacking_data_lgbm.npy')
     stacking_label = np.load('stacking_label_lgbm.npy')
     test = np.load('stacking_test_data_lgbm.npy')
-    feature_name += ['dnn_emb_' + str(i) for i in range(stacking_data.shape[1] - train.shape[1])]
+    # feature_name += ['dnn_emb_' + str(i) for i in range(stacking_data.shape[1] - train.shape[1])]
+    feature_name += ['lgbm_logit']
     feature_name = np.array(feature_name)
+    continus_binary_ind = [i for i in range(len(feature_name)) if not feature_name[i].endswith('_cat')]
+    #print(len(continus_binary_ind))
+    #exit(0)
+    stacking_data = stacking_data[:, continus_binary_ind]
+    test = test[:, continus_binary_ind]
     # print('Before shuffle feature name: {}'.format(feature_name))
     #feature_ind = np.array(range(stacking_data.shape[1]))
     #np.random.shuffle(feature_ind)
