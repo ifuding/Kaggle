@@ -4,16 +4,12 @@ from sklearn import metrics, preprocessing, pipeline, \
 import sklearn
 import pandas as pd
 import numpy as np
-import xgboost as xgb
-import lightgbm as lgb
 from time import gmtime, strftime
 import numpy.random as rng
 # from multiprocessing.dummy import Pool
-import h5py
 # import concurrent.futures
 import tensorflow as tf
 # import multiprocessing as mp
-import gensim
 import os
 from lcc_sample import lcc_sample
 from eval import min_pred
@@ -32,38 +28,40 @@ from keras.utils import np_utils
 from keras import backend as K
 from sklearn.metrics import log_loss
 from keras import __version__ as keras_version
-from keras.preprocessing.text import Tokenizer
-from keras.preprocessing.sequence import pad_sequences
 
 
-DROPOUT_RATE = 0.85
+DROPOUT_RATE = 0.5
 
-def dense_bn_layer(input_tensor, hn_num, name = None):
+def dense_bn_layer(input_tensor, hn_num, name = None, dropout = True, bn = True):
     """
     """
     x = Dense(hn_num)(input_tensor)
-    x = BatchNormalization(name = name)(x)
-    x = Dropout(DROPOUT_RATE)(x)
+    if bn:
+        x = BatchNormalization(name = name)(x)
+    if dropout:
+        x = Dropout(DROPOUT_RATE)(x)
     return x
 
 
-def dense_bn_act_layer(input_tensor, hn_num, name = None, act = 'relu'):
+def dense_bn_act_layer(input_tensor, hn_num, name = None, act = 'relu', dropout = True, bn = True):
     """
     """
     x = Dense(hn_num)(input_tensor)
-    x = BatchNormalization()(x)
-    x = Dropout(DROPOUT_RATE)(x)
+    if bn:
+        x = BatchNormalization(name = name)(x)
+    if dropout:
+        x = Dropout(DROPOUT_RATE)(x)
     x = Activation(act, name = name)(x)
     return x
 
 
-def identity_block(input_tensor, hn_num, name = None):
+def identity_block(input_tensor, hn_num, name = None, dropout = True):
     """
     """
-    adjust_layer = dense_bn_layer(input_tensor, hn_num)
+    adjust_layer = dense_bn_layer(input_tensor, hn_num, dropout = dropout)
     x = Activation('relu')(adjust_layer)
-    x = dense_bn_act_layer(x, hn_num * 3 / 2)
-    x = dense_bn_layer(x, hn_num)
+    x = dense_bn_act_layer(x, hn_num * 3 / 2, dropout = dropout)
+    x = dense_bn_layer(x, hn_num, dropout = dropout)
     x = Add()([x, adjust_layer])
     x = Activation('relu', name = name)(x)
     return x
@@ -89,7 +87,7 @@ def res_net(input_shape, hns = [16, 12, 8, 4], classes = 2):
     x = BatchNormalization()(inputs)
     x = identity_block(x, hns[0], name = 'block0')
     x = identity_block(x, hns[1], name = 'block1')
-    x = identity_block(x, hns[2], name = 'block2')
+    x = identity_block(x, hns[2], name = 'block2', dropout = False)
     # x = identity_block(x, hns[3], name = 'block3')
     # x = identity_block(x, hns[3])
     if classes == 2:
@@ -150,57 +148,40 @@ def eval_auc(y_true, y_prob):
     return score
 
 
-def boosting_res_net(input_shape, hns = [8, 6, 4, 4], classes = 2):
+def boosting_res_net(input_shape, hns = [8, 6, 4, 4], classes = 2, out_layer_name = None):
     """
     """
     inputs = Input(input_shape)
     boost_input = Lambda(lambda x: x[:, -1])(inputs)
     # res_module
     res_inputs = Lambda(lambda x: x[:, :-1])(inputs)
-    print (res_inputs.shape)
     res_model = res_net((input_shape[0] - 1, ), hns)
     res_module = Model(res_model.input, res_model.get_layer('block2').output)(res_inputs)
     res_pre_sigmoid = Dense(1)(res_module)
     # boost
     pre_sigmoid = Add(name = 'pre_sigmoid')([res_pre_sigmoid, boost_input])
-    proba = Activation('sigmoid')(pre_sigmoid)
+    proba = Activation('sigmoid', name = out_layer_name)(pre_sigmoid)
 
     model = Model(inputs, proba)
     model.compile(optimizer=Nadam(lr = 0.001), loss='binary_crossentropy')
 
     return model
 
+
 def rank_net(input_shape, hns = [8, 6, 4, 4], classes = 2):
     """
     """
-    res_model = boosting_res_net(input_shape, hns)
-
-    minor_inputs = Input(shape = input_shape)
-    pred_minor = res_model(minor_inputs)
-    major_inputs = Input(shape = input_shape)
-    pred_major = res_model(major_inputs)
-
-    sub = Subtract()([pred_major, pred_minor])
-    proba = Activation('sigmoid')(sub)
-
-    model = Model([minor_inputs, major_inputs], proba)
-    model.compile(optimizer=Nadam(lr = 0.001), loss=min_pred)
-
-    return model
-
-
-def rank_net_2(input_shape, hns = [8, 6, 4, 4], classes = 2):
-    """
-    """
-    res_model = boosting_res_net((input_shape[1],), hns)
+    res_model = boosting_res_net((input_shape[1],), hns, out_layer_name = 'proba')
 
     inputs = Input(input_shape)
-    minor_inputs = Lambda(lambda x: x[:, 0])(inputs)
+    minor_inputs = Lambda(lambda x: x[:, 0], name = 'minor_input')(inputs)
     pred_minor = res_model(minor_inputs)
-    major_inputs = Lambda(lambda x: x[:, 1])(inputs)
+    minor_out_proba = Lambda(lambda x: x, name = 'minor_out_proba')(pred_minor)
+    major_inputs = Lambda(lambda x: x[:, 1], name = 'major_input')(inputs)
     pred_major = res_model(major_inputs)
+    major_out_proba = Lambda(lambda x: x, name = 'major_out_proba')(pred_major)
 
-    sub = Subtract()([pred_major, pred_minor])
+    sub = Subtract()([major_out_proba, minor_out_proba])
     proba = Activation('sigmoid')(sub)
 
     model = Model(inputs, proba)

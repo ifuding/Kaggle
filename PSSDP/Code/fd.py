@@ -18,7 +18,7 @@ from lcc_sample import lcc_sample
 from scipy.special import logit
 from scipy.special import expit as sigmoid
 from eval import GiniWithEarlyStopping
-from optimize_auc import Get_Pair_data
+from optimize_auc import Get_Pair_data, rank_score
 
 from sklearn.cross_validation import KFold
 from sklearn.preprocessing import OneHotEncoder, LabelEncoder
@@ -36,10 +36,10 @@ from sklearn.metrics import log_loss
 from keras import __version__ as keras_version
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
-from resnet import res_net, create_dnn, boosting_res_net, boosting_dnn, boosting_parallel_res_net, rank_net, rank_net_2
+from resnet import res_net, create_dnn, boosting_res_net, boosting_dnn, boosting_parallel_res_net, rank_net
 
-DNN_EPOCHS = 30
-BATCH_SIZE = 125
+DNN_EPOCHS = 20
+BATCH_SIZE = 10240
 DNN_BN = True
 HIDDEN_UNITS = [32, 16, 8]
 DROPOUT_RATE = 0
@@ -132,7 +132,9 @@ def keras_train(train_part, train_part_label, valide_part, valide_part_label, fo
     """
     print("-----Keras training-----")
 
-    model = rank_net_2(train_part.shape[1:])
+    model = rank_net(train_part.shape[1:])
+    #print(model.summary())
+    #print(model.layers)
     # model = boosting_dnn((train_part.shape[1],))
     # model = boosting_parallel_res_net((train_part.shape[1],))
     # model = boosting_res_net((train_part.shape[1],))
@@ -145,8 +147,12 @@ def keras_train(train_part, train_part_label, valide_part, valide_part_label, fo
     #valide_boost_pred = sigmoid(valide_part[:, -1])
     #valide_boost_loss = log_loss(valide_part_label, valide_boost_pred)
     #print('-----valide boost log loss: {}'.format(valide_boost_loss))
+    train_rank_score = 1 - rank_score(sigmoid(train_part[:, 0, -1]), sigmoid(train_part[:, 1, -1]))
+    print('-----Train rank score: {}'.format(train_rank_score))
+    valide_rank_score = 1 - rank_score(sigmoid(valide_part[:, 0, -1]), sigmoid(valide_part[:, 1, -1]))
+    print('-----Valide rank score: {}'.format(valide_rank_score))
     callbacks = [
-            EarlyStopping(monitor='val_loss', patience=50, verbose=0),
+            EarlyStopping(monitor='val_loss', patience=2, verbose=0),
             # GiniWithEarlyStopping(patience=50, verbose=1),
             ]
 
@@ -163,7 +169,7 @@ def keras_train(train_part, train_part_label, valide_part, valide_part_label, fo
                 shuffle=True, verbose=2,
                 validation_data=(valide_part, valide_part_label)
                 , callbacks=callbacks)
-
+    model = Model(inputs = model.input, outputs = model.get_layer('minor_out_proba').output)
     return model
 
 
@@ -256,18 +262,9 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
         onefold_models = []
         for model_type in model_types:
             if model_type == 'k':
-                with tf.device('/cpu:0'):
-                    model = keras_train(train_part, train_part_label, valide_part, valide_part_label, num_fold)
+                # with tf.device('/cpu:0'):
+                model = keras_train(train_part, train_part_label, valide_part, valide_part_label, num_fold)
                 onefold_models.append((model, 'k'))
-                #block0 = Model(inputs = model.input, \
-                #            outputs = model.get_layer('block0').output)
-                #onefold_models.append((block0, 'k'))
-                #block1 = Model(inputs = model.input, \
-                #            outputs = model.get_layer('block1').output)
-                #onefold_models.append((block1, 'k'))
-                #block2 = Model(inputs = model.input, \
-                #            outputs = model.get_layer('block2').output)
-                #onefold_models.append((block2, 'k'))
             elif model_type == 'x':
                 model = xgb_train(train_part, train_part_label, valide_part, valide_part_label, num_fold)
                 onefold_models.append((model, 'x'))
@@ -356,6 +353,8 @@ if __name__ == "__main__":
     #exit(0)
     stacking_data = stacking_data[:, continus_binary_ind]
     test = test[:, continus_binary_ind]
+    # Fake test
+    test = np.c_[test, test].reshape((test.shape[0], 2, test.shape[1]))
     stacking_data = Get_Pair_data(stacking_data, stacking_label)
     stacking_label = np.zeros(stacking_data.shape[0])
     # print('Before shuffle feature name: {}'.format(feature_name))
@@ -367,15 +366,6 @@ if __name__ == "__main__":
     # print('After shuffle feature name: {}'.format(feature_name))
     #pilot_preds = models_eval(pilot_models, train)
     #sample_data, sample_label, weight = lcc_sample(train_label, pilot_preds, train, 2)
-    #np.save('lcc_sample_data', sample_data)
-    #np.save('lcc_sample_label', sample_label)
-    #np.save('lcc_sample_weight', weight)
-    #sample_data = np.load('lcc_sample_data.npy')
-    #sample_label = np.load('lcc_sample_label.npy')
-    #weight = np.load('lcc_sample_weight.npy')
     models, stacking_data, stacking_label, test = nfold_train(stacking_data, stacking_label, 5, ['k'], False, None, None, test)
     # lcc_preds = lcc_ensemble(pilot_models, sample_models, test)
-    #np.save('stacking_data_kx', stacking_data)
-    #np.save('stacking_label_kx', stacking_label)
-    #np.save('stacking_test_data_kx', test)
-    #gen_sub(models, test, test_id)
+    gen_sub(models, test, test_id)
