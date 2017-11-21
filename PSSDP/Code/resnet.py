@@ -16,6 +16,7 @@ import tensorflow as tf
 import gensim
 import os
 from lcc_sample import lcc_sample
+from eval import min_pred
 
 from sklearn.cross_validation import KFold
 from sklearn.preprocessing import OneHotEncoder, LabelEncoder
@@ -23,7 +24,7 @@ from keras.models import Sequential, Model
 from keras.layers.core import Dense, Dropout, Flatten, Reshape
 from keras.layers.normalization import BatchNormalization
 from keras.layers.embeddings import Embedding
-from keras.layers import Input, concatenate, merge, LSTM, Lambda, Add, Activation
+from keras.layers import Input, concatenate, merge, LSTM, Lambda, Add, Activation, Subtract
 from keras.layers.convolutional import Convolution2D, MaxPooling2D, ZeroPadding2D, AveragePooling2D
 from keras.optimizers import SGD, RMSprop, Adam, Nadam
 from keras.callbacks import EarlyStopping
@@ -35,7 +36,7 @@ from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 
 
-DROPOUT_RATE = 0.9
+DROPOUT_RATE = 0.85
 
 def dense_bn_layer(input_tensor, hn_num, name = None):
     """
@@ -81,7 +82,7 @@ def boosting_identity_block(input_tensor, hn_num, name = None):
     return x
 
 
-def res_net(input_shape, hns = [8, 6, 4, 4], classes = 2):
+def res_net(input_shape, hns = [16, 12, 8, 4], classes = 2):
     """
     """
     inputs = Input(shape=input_shape)
@@ -89,7 +90,7 @@ def res_net(input_shape, hns = [8, 6, 4, 4], classes = 2):
     x = identity_block(x, hns[0], name = 'block0')
     x = identity_block(x, hns[1], name = 'block1')
     x = identity_block(x, hns[2], name = 'block2')
-    x = identity_block(x, hns[3], name = 'block3')
+    # x = identity_block(x, hns[3], name = 'block3')
     # x = identity_block(x, hns[3])
     if classes == 2:
         x = Dense(1, activation='sigmoid')(x)
@@ -141,22 +142,69 @@ def eval_gini(y_true, y_prob):
     return gini
 
 
+def eval_auc(y_true, y_prob):
+    score, up_opt = tf.metrics.auc(y_true, y_prob)
+    K.get_session().run(tf.local_variables_initializer())
+    with tf.control_dependencies([up_opt]):
+        score = tf.identity(score)
+    return score
+
+
 def boosting_res_net(input_shape, hns = [8, 6, 4, 4], classes = 2):
     """
     """
-    boost_input = Input(shape=(1,))
+    inputs = Input(input_shape)
+    boost_input = Lambda(lambda x: x[:, -1])(inputs)
     # res_module
-    res_shape = (input_shape[0] - 1,)
-    res_inputs = Input(shape = res_shape)
-    res_model = res_net(res_shape, hns)
+    res_inputs = Lambda(lambda x: x[:, :-1])(inputs)
+    print (res_inputs.shape)
+    res_model = res_net((input_shape[0] - 1, ), hns)
     res_module = Model(res_model.input, res_model.get_layer('block2').output)(res_inputs)
     res_pre_sigmoid = Dense(1)(res_module)
     # boost
     pre_sigmoid = Add(name = 'pre_sigmoid')([res_pre_sigmoid, boost_input])
     proba = Activation('sigmoid')(pre_sigmoid)
 
-    model = Model([res_inputs, boost_input], proba)
-    model.compile(optimizer=Nadam(lr = 0.001), loss='binary_crossentropy', metrics = [eval_gini])
+    model = Model(inputs, proba)
+    model.compile(optimizer=Nadam(lr = 0.001), loss='binary_crossentropy')
+
+    return model
+
+def rank_net(input_shape, hns = [8, 6, 4, 4], classes = 2):
+    """
+    """
+    res_model = boosting_res_net(input_shape, hns)
+
+    minor_inputs = Input(shape = input_shape)
+    pred_minor = res_model(minor_inputs)
+    major_inputs = Input(shape = input_shape)
+    pred_major = res_model(major_inputs)
+
+    sub = Subtract()([pred_major, pred_minor])
+    proba = Activation('sigmoid')(sub)
+
+    model = Model([minor_inputs, major_inputs], proba)
+    model.compile(optimizer=Nadam(lr = 0.001), loss=min_pred)
+
+    return model
+
+
+def rank_net_2(input_shape, hns = [8, 6, 4, 4], classes = 2):
+    """
+    """
+    res_model = boosting_res_net((input_shape[1],), hns)
+
+    inputs = Input(input_shape)
+    minor_inputs = Lambda(lambda x: x[:, 0])(inputs)
+    pred_minor = res_model(minor_inputs)
+    major_inputs = Lambda(lambda x: x[:, 1])(inputs)
+    pred_major = res_model(major_inputs)
+
+    sub = Subtract()([pred_major, pred_minor])
+    proba = Activation('sigmoid')(sub)
+
+    model = Model(inputs, proba)
+    model.compile(optimizer=Nadam(lr = 0.001), loss=min_pred)
 
     return model
 
