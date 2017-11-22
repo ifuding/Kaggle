@@ -359,7 +359,7 @@ if __name__ == "__main__":
     test = np.c_[test, test].reshape((test.shape[0], 2, test.shape[1]))
     # stacking_data = Get_Pair_data(stacking_data, stacking_label)
     stacking_data = Get_Pair_data(train[:, continus_binary_ind], train_label)
-    stacking_label = np.zeros(stacking_data.shape[0])
+    stacking_label = np.ones(stacking_data.shape[0])
     # print('Before shuffle feature name: {}'.format(feature_name))
     #feature_ind = np.array(range(stacking_data.shape[1]))
     #np.random.shuffle(feature_ind)

@@ -162,7 +162,8 @@ def rank_net(input_shape, hns = [6, 4, 4, 4], classes = 2):
     proba = Activation('sigmoid')(sub)
 
     model = Model(inputs, proba)
-    model.compile(optimizer=Nadam(lr = 0.0005), loss=min_pred)
+    # model.compile(optimizer=Nadam(lr = 0.0005), loss=min_pred)
+    model.compile(optimizer=Nadam(lr = 0.0005), loss='binary_crossentropy')
 
     return model
 
