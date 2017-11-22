@@ -30,8 +30,8 @@ from sklearn.metrics import log_loss
 from keras import __version__ as keras_version
 
 
-RANK_SCALE = 2
-DROPOUT_RATE = 0.25
+RANK_SCALE = 1
+DROPOUT_RATE = 0.8
 
 def dense_bn_layer(input_tensor, hn_num, name = None, dropout = True, bn = True):
     """
@@ -163,7 +163,38 @@ def rank_net(input_shape, hns = [6, 4, 4, 4], classes = 2):
 
     model = Model(inputs, proba)
     # model.compile(optimizer=Nadam(lr = 0.0005), loss=min_pred)
-    model.compile(optimizer=Nadam(lr = 0.0005), loss='binary_crossentropy')
+    model.compile(optimizer=Nadam(lr = 0.001), loss='binary_crossentropy')
+
+    return model
+
+
+def ll_rank_net(input_shape, hns = [6, 4, 4, 4], classes = 2):
+    """
+    """
+    res_model = res_net((input_shape[1],), hns)
+    res_model = Model(res_model.input, res_model.get_layer('pre_sigmoid').output)
+    inputs = Input(input_shape)
+
+    minor_inputs = Lambda(lambda x: x[:, 0], name = 'minor_input')(inputs)
+    pred_minor = res_model(minor_inputs)
+    minor_pre_sigmoid = Lambda(lambda x: x, name = 'minor_pre_sigmoid')(pred_minor)
+    minor_proba = Activation('sigmoid', name = 'minor_pred')(minor_pre_sigmoid)
+    minor_pred_loss = Lambda(lambda x: -0.333 * tf.log(x), name = 'minor_loss')(minor_proba)
+
+    major_inputs = Lambda(lambda x: x[:, 1], name = 'major_input')(inputs)
+    pred_major = res_model(major_inputs)
+    major_pre_sigmoid = Lambda(lambda x: x, name = 'major_pre_sigmoid')(pred_major)
+    major_proba = Activation('sigmoid', name = 'major_pred')(major_pre_sigmoid)
+    major_pred_loss = Lambda(lambda x: -0.333 * tf.log(1 - x), name = 'major_loss')(major_proba)
+
+    sub = Subtract()([minor_pre_sigmoid, major_pre_sigmoid])
+    sub = Lambda(lambda x: x * RANK_SCALE, name = 'rank_scale_layer')(sub)
+    rank_proba = Activation('sigmoid')(sub)
+    rank_loss = Lambda(lambda x: 0 * tf.log(x), name = 'rank_loss')(rank_proba)
+
+    loss = Add()([minor_pred_loss, major_pred_loss, rank_loss])
+    model = Model(inputs, loss)
+    model.compile(optimizer=Nadam(lr = 0.0001), loss=min_pred)
 
     return model
 

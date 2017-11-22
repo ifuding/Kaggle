@@ -4,6 +4,7 @@ import keras
 import numpy as np
 from sklearn.metrics import roc_auc_score
 from optimize_auc import rank_score
+from keras.models import Sequential, Model
 
 def gini(actual, pred, cmpcol = 0, sortcol = 1):
     assert( len(actual) == len(pred) )
@@ -211,7 +212,8 @@ class PairAUCEarlyStopping(keras.callbacks.Callback):
         valide_data = self.validation_data[:-3]
         valide_label = self.validation_data[-3]
         if(self.validation_data):
-            y_hat_val=self.model.predict(valide_data,batch_size=self.predict_batch_size)
+            model = Model(inputs = self.model.input, outputs = self.model.get_layer('rank_scale_layer').output)
+            y_hat_val=model.predict(valide_data,batch_size=self.predict_batch_size)
 
         if(self.verbose > 1):
             print("Hi! on_epoch_end() , epoch=",epoch,",logs:",logs)
@@ -233,11 +235,11 @@ class PairAUCEarlyStopping(keras.callbacks.Callback):
                 print("        roc_auc_scores*2-1           : ",roc_auc_score(valide_label, y_hat_val)*2-1)
 
             print('    Logs (others metrics):',logs)
-        current = np.mean(np.heaviside(y_hat_val - 0.5, 0.5))
+        current = np.mean(np.heaviside(y_hat_val, 0.5))
         # FROM EARLY STOP
         if(self.validation_data):
             if (self.verbose == 1):
-                rank_auc = 1 - current
+                rank_auc = current
                 gini = 2 * rank_auc - 1
                 print("Validate Heaviside Rank Score: {}, rank_auc: {}, gini: {}".format(current, rank_auc, gini))
 

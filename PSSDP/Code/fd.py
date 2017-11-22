@@ -36,7 +36,7 @@ from sklearn.metrics import log_loss
 from keras import __version__ as keras_version
 from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
-from resnet import res_net, create_dnn, boosting_res_net, boosting_dnn, boosting_parallel_res_net, rank_net, boosting_rank_net
+from resnet import res_net, create_dnn, boosting_res_net, boosting_dnn, boosting_parallel_res_net, rank_net, boosting_rank_net, ll_rank_net
 
 DNN_EPOCHS = 30
 BATCH_SIZE = 10240
@@ -132,8 +132,9 @@ def keras_train(train_part, train_part_label, valide_part, valide_part_label, fo
     """
     print("-----Keras training-----")
 
-    model = rank_net(train_part.shape[1:])
-    #print(model.summary())
+    model = ll_rank_net(train_part.shape[1:])
+    # model = rank_net(train_part.shape[1:])
+    print(model.summary())
     #print(model.layers)
     # model = boosting_dnn((train_part.shape[1],))
     # model = boosting_parallel_res_net((train_part.shape[1],))
@@ -172,7 +173,7 @@ def keras_train(train_part, train_part_label, valide_part, valide_part_label, fo
                 shuffle=True, verbose=2,
                 validation_data=(valide_part, valide_part_label)
                 , callbacks=callbacks)
-    model = Model(inputs = model.input, outputs = model.get_layer('minor_out_proba').output)
+    model = Model(inputs = model.input, outputs = model.get_layer('minor_pred').output)
     return model
 
 
