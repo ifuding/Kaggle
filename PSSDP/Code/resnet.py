@@ -30,11 +30,13 @@ from sklearn.metrics import log_loss
 from keras import __version__ as keras_version
 
 
-DROPOUT_RATE = 0.5
+RANK_SCALE = 2
+DROPOUT_RATE = 0.25
 
 def dense_bn_layer(input_tensor, hn_num, name = None, dropout = True, bn = True):
     """
     """
+    hn_num = int(hn_num)
     x = Dense(hn_num)(input_tensor)
     if bn:
         x = BatchNormalization(name = name)(x)
@@ -46,6 +48,7 @@ def dense_bn_layer(input_tensor, hn_num, name = None, dropout = True, bn = True)
 def dense_bn_act_layer(input_tensor, hn_num, name = None, act = 'relu', dropout = True, bn = True):
     """
     """
+    hn_num = int(hn_num)
     x = Dense(hn_num)(input_tensor)
     if bn:
         x = BatchNormalization(name = name)(x)
@@ -80,22 +83,20 @@ def boosting_identity_block(input_tensor, hn_num, name = None):
     return x
 
 
-def res_net(input_shape, hns = [16, 12, 8, 4], classes = 2):
+def res_net(input_shape, hns = [8, 6, 4, 4], classes = 2):
     """
     """
     inputs = Input(shape=input_shape)
     x = BatchNormalization()(inputs)
     x = identity_block(x, hns[0], name = 'block0')
     x = identity_block(x, hns[1], name = 'block1')
-    x = identity_block(x, hns[2], name = 'block2', dropout = False)
+    # x = identity_block(x, hns[2], name = 'block2', dropout = True)
     # x = identity_block(x, hns[3], name = 'block3')
     # x = identity_block(x, hns[3])
-    if classes == 2:
-        x = Dense(1, activation='sigmoid')(x)
-    else:
-        x = Dense(classes, activation='softmax')(x)
+    x = Dense(1, name = 'pre_sigmoid')(x)
+    proba = Activation('sigmoid')(x)
     model = Model(inputs, x)
-    model.compile(optimizer=Nadam(), loss='binary_crossentropy')
+    model.compile(optimizer=Nadam(lr = 0.001), loss='binary_crossentropy')
 
     return model
 
@@ -121,32 +122,6 @@ def boosting_dnn(input_shape, hns = [8, 6, 4, 7], classes = 2):
     return model
 
 
-def eval_gini(y_true, y_prob):
-    print(type(y_true))
-    print(type(y_prob))
-    sess = tf.Session()
-    with sess.as_default():
-        y_true = y_true[np.argsort(y_prob.eval())]
-    ntrue = 0
-    gini = 0
-    delta = 0
-    n = len(y_true)
-    for i in range(n-1, -1, -1):
-        y_i = y_true[i]
-        ntrue += y_i
-        gini += y_i * delta
-        delta += 1 - y_i
-    gini = 1 - 2 * gini / (ntrue * (n - ntrue))
-    return gini
-
-
-def eval_auc(y_true, y_prob):
-    score, up_opt = tf.metrics.auc(y_true, y_prob)
-    K.get_session().run(tf.local_variables_initializer())
-    with tf.control_dependencies([up_opt]):
-        score = tf.identity(score)
-    return score
-
 
 def boosting_res_net(input_shape, hns = [8, 6, 4, 4], classes = 2, out_layer_name = None):
     """
@@ -156,7 +131,7 @@ def boosting_res_net(input_shape, hns = [8, 6, 4, 4], classes = 2, out_layer_nam
     # res_module
     res_inputs = Lambda(lambda x: x[:, :-1])(inputs)
     res_model = res_net((input_shape[0] - 1, ), hns)
-    res_module = Model(res_model.input, res_model.get_layer('block2').output)(res_inputs)
+    res_module = Model(res_model.input, res_model.get_layer('block1').output)(res_inputs)
     res_pre_sigmoid = Dense(1)(res_module)
     # boost
     pre_sigmoid = Add(name = 'pre_sigmoid')([res_pre_sigmoid, boost_input])
@@ -168,10 +143,11 @@ def boosting_res_net(input_shape, hns = [8, 6, 4, 4], classes = 2, out_layer_nam
     return model
 
 
-def rank_net(input_shape, hns = [8, 6, 4, 4], classes = 2):
+def rank_net(input_shape, hns = [6, 4, 4, 4], classes = 2):
     """
     """
-    res_model = boosting_res_net((input_shape[1],), hns, out_layer_name = 'proba')
+    res_model = res_net((input_shape[1],), hns)
+    res_model = Model(res_model.input, res_model.get_layer('pre_sigmoid').output)
 
     inputs = Input(input_shape)
     minor_inputs = Lambda(lambda x: x[:, 0], name = 'minor_input')(inputs)
@@ -182,6 +158,31 @@ def rank_net(input_shape, hns = [8, 6, 4, 4], classes = 2):
     major_out_proba = Lambda(lambda x: x, name = 'major_out_proba')(pred_major)
 
     sub = Subtract()([major_out_proba, minor_out_proba])
+    sub = Lambda(lambda x: x * RANK_SCALE, name = 'rank_scale_layer')(sub)
+    proba = Activation('sigmoid')(sub)
+
+    model = Model(inputs, proba)
+    model.compile(optimizer=Nadam(lr = 0.0005), loss=min_pred)
+
+    return model
+
+
+def boosting_rank_net(input_shape, hns = [8, 6, 4, 4], classes = 2):
+    """
+    """
+    res_model = boosting_res_net((input_shape[1],), hns, out_layer_name = 'proba')
+    res_model = Model(res_model.input, res_model.get_layer('pre_sigmoid').output)
+
+    inputs = Input(input_shape)
+    minor_inputs = Lambda(lambda x: x[:, 0], name = 'minor_input')(inputs)
+    pred_minor = res_model(minor_inputs)
+    minor_out_proba = Lambda(lambda x: x, name = 'minor_out_proba')(pred_minor)
+    major_inputs = Lambda(lambda x: x[:, 1], name = 'major_input')(inputs)
+    pred_major = res_model(major_inputs)
+    major_out_proba = Lambda(lambda x: x, name = 'major_out_proba')(pred_major)
+
+    sub = Subtract()([major_out_proba, minor_out_proba])
+    sub = Lambda(lambda x: x * RANK_SCALE, name = 'rank_scale_layer')(sub)
     proba = Activation('sigmoid')(sub)
 
     model = Model(inputs, proba)
