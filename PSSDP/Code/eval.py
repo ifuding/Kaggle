@@ -5,6 +5,7 @@ import numpy as np
 from sklearn.metrics import roc_auc_score
 from optimize_auc import rank_score
 from keras.models import Sequential, Model
+from scipy.special import expit as sigmoid
 
 def gini(actual, pred, cmpcol = 0, sortcol = 1):
     assert( len(actual) == len(pred) )
@@ -241,7 +242,10 @@ class PairAUCEarlyStopping(keras.callbacks.Callback):
             if (self.verbose == 1):
                 rank_auc = current
                 gini = 2 * rank_auc - 1
+                current_sigmoid = np.mean(sigmoid(y_hat_val))
+                gini_sigmoid = 2 * current_sigmoid - 1
                 print("Validate Heaviside Rank Score: {}, rank_auc: {}, gini: {}".format(current, rank_auc, gini))
+                print("Validate Sigmoid Rank Score: {}, rank_auc: {}, gini: {}".format(current_sigmoid, current_sigmoid, gini_sigmoid))
 
             if self.monitor_op(current - self.min_delta, self.best):
                 self.best = current

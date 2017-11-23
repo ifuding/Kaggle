@@ -25,19 +25,21 @@ from keras.layers.convolutional import Convolution2D, MaxPooling2D, ZeroPadding2
 from keras.optimizers import SGD, RMSprop, Adam, Nadam
 from keras.callbacks import EarlyStopping
 from keras.utils import np_utils
-from keras import backend as K
+from keras import backend as K, regularizers as regular
 from sklearn.metrics import log_loss
 from keras import __version__ as keras_version
 
 
 RANK_SCALE = 1
-DROPOUT_RATE = 0.8
+DROPOUT_RATE = 0.2
+EPSILON = 1e-7
+L2_NORM = 0.001
 
 def dense_bn_layer(input_tensor, hn_num, name = None, dropout = True, bn = True):
     """
     """
     hn_num = int(hn_num)
-    x = Dense(hn_num)(input_tensor)
+    x = Dense(hn_num, kernel_regularizer = regular.l2(L2_NORM))(input_tensor)
     if bn:
         x = BatchNormalization(name = name)(x)
     if dropout:
@@ -49,9 +51,9 @@ def dense_bn_act_layer(input_tensor, hn_num, name = None, act = 'relu', dropout 
     """
     """
     hn_num = int(hn_num)
-    x = Dense(hn_num)(input_tensor)
+    x = Dense(hn_num, kernel_regularizer = regular.l2(L2_NORM))(input_tensor)
     if bn:
-        x = BatchNormalization(name = name)(x)
+        x = BatchNormalization()(x)
     if dropout:
         x = Dropout(DROPOUT_RATE)(x)
     x = Activation(act, name = name)(x)
@@ -104,23 +106,20 @@ def res_net(input_shape, hns = [8, 6, 4, 4], classes = 2):
 def boosting_dnn(input_shape, hns = [8, 6, 4, 7], classes = 2):
     """
     """
-    boost_input = Input(shape=(1,))
-    # res_module
-    res_shape = (input_shape[0] - 1,)
-    res_inputs = Input(shape = res_shape)
-
-    res_model = create_dnn(input_shape[0] - 1)
-    res_module = Model(res_model.input, res_model.get_layer('hn0').output)(res_inputs)
-    res_pre_sigmoid = Dense(1)(res_module)
+    inputs = Input(input_shape)
+    boost_input = Lambda(lambda x: x[:, -1])(inputs)
+    dnn_input = Lambda(lambda x: x[:, :-1])(inputs)
+    #dnn_module
+    dnn_model = create_dnn((input_shape[0] - 1,), hns)
+    dnn_pre_sigmoid = Model(dnn_model.input, dnn_model.get_layer('pre_sigmoid').output)(dnn_input)
     # boost
-    pre_sigmoid = Add()([res_pre_sigmoid, boost_input])
+    pre_sigmoid = Add(name = 'pre_sigmoid')([dnn_pre_sigmoid, boost_input])
     proba = Activation('sigmoid')(pre_sigmoid)
 
-    model = Model([res_inputs, boost_input], proba)
+    model = Model(inputs, proba)
     model.compile(optimizer=Nadam(lr = 0.001), loss='binary_crossentropy')
 
     return model
-
 
 
 def boosting_res_net(input_shape, hns = [8, 6, 4, 4], classes = 2, out_layer_name = None):
@@ -168,10 +167,11 @@ def rank_net(input_shape, hns = [6, 4, 4, 4], classes = 2):
     return model
 
 
-def ll_rank_net(input_shape, hns = [6, 4, 4, 4], classes = 2):
+def ll_rank_net(input_shape, hns = [20, 6, 4, 4], classes = 2):
     """
     """
-    res_model = res_net((input_shape[1],), hns)
+    res_model = create_dnn((input_shape[1],), hns)
+    # res_model = res_net((input_shape[1],), hns)
     res_model = Model(res_model.input, res_model.get_layer('pre_sigmoid').output)
     inputs = Input(input_shape)
 
@@ -179,22 +179,26 @@ def ll_rank_net(input_shape, hns = [6, 4, 4, 4], classes = 2):
     pred_minor = res_model(minor_inputs)
     minor_pre_sigmoid = Lambda(lambda x: x, name = 'minor_pre_sigmoid')(pred_minor)
     minor_proba = Activation('sigmoid', name = 'minor_pred')(minor_pre_sigmoid)
-    minor_pred_loss = Lambda(lambda x: -0.333 * tf.log(x), name = 'minor_loss')(minor_proba)
+    # minor_pred_loss = Lambda(lambda x: -1 * K.log(K.clip(x, EPSILON, 1)), name = 'minor_loss')(minor_proba)
+    minor_pred_loss = Lambda(lambda x: 1 - x, name = 'minor_loss')(minor_proba)
 
     major_inputs = Lambda(lambda x: x[:, 1], name = 'major_input')(inputs)
     pred_major = res_model(major_inputs)
     major_pre_sigmoid = Lambda(lambda x: x, name = 'major_pre_sigmoid')(pred_major)
     major_proba = Activation('sigmoid', name = 'major_pred')(major_pre_sigmoid)
-    major_pred_loss = Lambda(lambda x: -0.333 * tf.log(1 - x), name = 'major_loss')(major_proba)
+    # major_pred_loss = Lambda(lambda x: -1 * K.log(K.clip(1 - x, EPSILON, 1)), name = 'major_loss')(major_proba)
+    major_pred_loss = Lambda(lambda x: x, name = 'major_loss')(major_proba)
 
     sub = Subtract()([minor_pre_sigmoid, major_pre_sigmoid])
     sub = Lambda(lambda x: x * RANK_SCALE, name = 'rank_scale_layer')(sub)
     rank_proba = Activation('sigmoid')(sub)
-    rank_loss = Lambda(lambda x: 0 * tf.log(x), name = 'rank_loss')(rank_proba)
+    rank_loss = Lambda(lambda x: 0 * (1 - x), name = 'rank_loss')(rank_proba)
+    # rank_loss = Lambda(lambda x: -1 * K.log(K.clip(x, EPSILON, 1)), name = 'rank_loss')(rank_proba)
 
-    loss = Add()([minor_pred_loss, major_pred_loss, rank_loss])
+    loss = Add()([minor_pred_loss, rank_loss, major_pred_loss])
     model = Model(inputs, loss)
-    model.compile(optimizer=Nadam(lr = 0.0001), loss=min_pred)
+    model.compile(optimizer=Nadam(lr = 0.001), loss=min_pred)
+    # model.compile(optimizer=Nadam(lr = 0.001), loss='binary_crossentropy')
 
     return model
 
@@ -256,23 +260,16 @@ def create_embedding_layer():
     return input_list, concatenate(embedding_list, axis = 2)
 
 
-def create_dnn(input_len, HIDDEN_UNITS = [30, 4, 4], DNN_BN = False, DROPOUT_RATE = 0):
-    inputs = Input(shape=(input_len,))
-    x = dense_bn_act_layer(inputs, HIDDEN_UNITS[0], name = 'hn0')
+def create_dnn(input_shape, HIDDEN_UNITS = [8, 6, 4], DNN_BN = False, DROPOUT_RATE = 0):
+    inputs = Input(input_shape)
+    x = BatchNormalization()(inputs)
+    x = dense_bn_act_layer(x, HIDDEN_UNITS[0], name = 'hn0')
     x = dense_bn_act_layer(x, HIDDEN_UNITS[1], name = 'hn1')
-    # x = dense_bn_act_layer(x, HIDDEN_UNITS[2], name = 'hn3')
-    x = dense_bn_act_layer(x, 1, name = 'prob', act = 'sigmoid')
-    ## First HN
-    #model.add(Dense(HIDDEN_UNITS[0], activation='relu', input_dim = input_len))
-    #if DNN_BN:
-    #    model.add(BatchNormalization())
-    #if DROPOUT_RATE > 0:
-    #    model.add(Dropout(DROPOUT_RATE))
-
-    # optimizer = SGD(lr=1e-3, decay=1e-6, momentum=0.9, nesterov=True)
-    optimizer = RMSprop(lr=1e-3, rho = 0.9, epsilon = 1e-8)
+    # x = dense_bn_act_layer(x, HIDDEN_UNITS[2], name = 'hn2')
+    x = Dense(1, name = 'pre_sigmoid')(x)
+    proba = Activation('sigmoid')(x)
     model = Model(inputs, x)
-    model.compile(optimizer=Adam(), loss='binary_crossentropy')
+    model.compile(optimizer=Nadam(), loss='binary_crossentropy')
 
     return model
 
