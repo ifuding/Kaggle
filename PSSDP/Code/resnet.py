@@ -25,21 +25,22 @@ from keras.layers.convolutional import Convolution2D, MaxPooling2D, ZeroPadding2
 from keras.optimizers import SGD, RMSprop, Adam, Nadam
 from keras.callbacks import EarlyStopping
 from keras.utils import np_utils
-from keras import backend as K, regularizers as regular
+from keras import backend as K
+from keras.regularizers import l1, l2
 from sklearn.metrics import log_loss
 from keras import __version__ as keras_version
 
 
-RANK_SCALE = 1
-DROPOUT_RATE = 0.2
+RANK_SCALE = 5
+DROPOUT_RATE = 0.8
 EPSILON = 1e-7
-L2_NORM = 0.001
+L2_NORM = 0
 
 def dense_bn_layer(input_tensor, hn_num, name = None, dropout = True, bn = True):
     """
     """
     hn_num = int(hn_num)
-    x = Dense(hn_num, kernel_regularizer = regular.l2(L2_NORM))(input_tensor)
+    x = Dense(hn_num, kernel_regularizer = l2(L2_NORM))(input_tensor)
     if bn:
         x = BatchNormalization(name = name)(x)
     if dropout:
@@ -51,7 +52,7 @@ def dense_bn_act_layer(input_tensor, hn_num, name = None, act = 'relu', dropout 
     """
     """
     hn_num = int(hn_num)
-    x = Dense(hn_num, kernel_regularizer = regular.l2(L2_NORM))(input_tensor)
+    x = Dense(hn_num, kernel_regularizer = l2(L2_NORM))(input_tensor)
     if bn:
         x = BatchNormalization()(x)
     if dropout:
@@ -122,7 +123,7 @@ def boosting_dnn(input_shape, hns = [8, 6, 4, 7], classes = 2):
     return model
 
 
-def boosting_res_net(input_shape, hns = [8, 6, 4, 4], classes = 2, out_layer_name = None):
+def boosting_res_net(input_shape, hns = [64, 32, 16, 4], classes = 2, out_layer_name = None):
     """
     """
     inputs = Input(input_shape)
@@ -167,10 +168,11 @@ def rank_net(input_shape, hns = [6, 4, 4, 4], classes = 2):
     return model
 
 
-def ll_rank_net(input_shape, hns = [20, 6, 4, 4], classes = 2):
+def ll_rank_net(input_shape, hns = [128, 64, 4, 4], classes = 2):
     """
     """
-    res_model = create_dnn((input_shape[1],), hns)
+    res_model = boosting_res_net((input_shape[1],), hns)
+    # res_model = create_dnn((input_shape[1],), hns)
     # res_model = res_net((input_shape[1],), hns)
     res_model = Model(res_model.input, res_model.get_layer('pre_sigmoid').output)
     inputs = Input(input_shape)
@@ -180,14 +182,14 @@ def ll_rank_net(input_shape, hns = [20, 6, 4, 4], classes = 2):
     minor_pre_sigmoid = Lambda(lambda x: x, name = 'minor_pre_sigmoid')(pred_minor)
     minor_proba = Activation('sigmoid', name = 'minor_pred')(minor_pre_sigmoid)
     # minor_pred_loss = Lambda(lambda x: -1 * K.log(K.clip(x, EPSILON, 1)), name = 'minor_loss')(minor_proba)
-    minor_pred_loss = Lambda(lambda x: 1 - x, name = 'minor_loss')(minor_proba)
+    minor_pred_loss = Lambda(lambda x: 1 * (1 - x), name = 'minor_loss')(minor_proba)
 
     major_inputs = Lambda(lambda x: x[:, 1], name = 'major_input')(inputs)
     pred_major = res_model(major_inputs)
     major_pre_sigmoid = Lambda(lambda x: x, name = 'major_pre_sigmoid')(pred_major)
     major_proba = Activation('sigmoid', name = 'major_pred')(major_pre_sigmoid)
     # major_pred_loss = Lambda(lambda x: -1 * K.log(K.clip(1 - x, EPSILON, 1)), name = 'major_loss')(major_proba)
-    major_pred_loss = Lambda(lambda x: x, name = 'major_loss')(major_proba)
+    major_pred_loss = Lambda(lambda x: 1 * x, name = 'major_loss')(major_proba)
 
     sub = Subtract()([minor_pre_sigmoid, major_pre_sigmoid])
     sub = Lambda(lambda x: x * RANK_SCALE, name = 'rank_scale_layer')(sub)
@@ -197,7 +199,7 @@ def ll_rank_net(input_shape, hns = [20, 6, 4, 4], classes = 2):
 
     loss = Add()([minor_pred_loss, rank_loss, major_pred_loss])
     model = Model(inputs, loss)
-    model.compile(optimizer=Nadam(lr = 0.001), loss=min_pred)
+    model.compile(optimizer=Nadam(lr = 0.0001), loss=min_pred)
     # model.compile(optimizer=Nadam(lr = 0.001), loss='binary_crossentropy')
 
     return model
@@ -260,7 +262,7 @@ def create_embedding_layer():
     return input_list, concatenate(embedding_list, axis = 2)
 
 
-def create_dnn(input_shape, HIDDEN_UNITS = [8, 6, 4], DNN_BN = False, DROPOUT_RATE = 0):
+def create_dnn(input_shape, HIDDEN_UNITS = [16, 8, 4], DNN_BN = False, DROPOUT_RATE = 0):
     inputs = Input(input_shape)
     x = BatchNormalization()(inputs)
     x = dense_bn_act_layer(x, HIDDEN_UNITS[0], name = 'hn0')

@@ -17,7 +17,7 @@ import os
 from lcc_sample import lcc_sample
 from scipy.special import logit
 from scipy.special import expit as sigmoid
-from eval import GiniWithEarlyStopping, PairAUCEarlyStopping
+from eval import GiniWithEarlyStopping, PairAUCEarlyStopping, gini_normalized
 from optimize_auc import Get_Pair_data, rank_score
 
 from sklearn.cross_validation import KFold
@@ -38,8 +38,8 @@ from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 from resnet import res_net, create_dnn, boosting_res_net, boosting_dnn, boosting_parallel_res_net, rank_net, boosting_rank_net, ll_rank_net
 
-DNN_EPOCHS = 5
-BATCH_SIZE = 20480
+DNN_EPOCHS = 30
+BATCH_SIZE = 1024
 DNN_BN = True
 HIDDEN_UNITS = [32, 16, 8]
 DROPOUT_RATE = 0
@@ -132,32 +132,34 @@ def keras_train(train_part, train_part_label, valide_part, valide_part_label, fo
     """
     print("-----Keras training-----")
 
-    model = ll_rank_net(train_part.shape[1:])
+    # model = ll_rank_net(train_part.shape[1:])
     # model = rank_net(train_part.shape[1:])
     # print(model.summary())
     #print(model.layers)
     # model = boosting_dnn((train_part.shape[1],))
     # model = boosting_parallel_res_net((train_part.shape[1],))
-    # model = boosting_res_net((train_part.shape[1],))
+    model = boosting_res_net((train_part.shape[1],))
     # model = res_net((train_part.shape[1],))
     # model = create_dnn(train_part.shape[1])
     # model = create_embedding_model()
-    #train_boost_pred = sigmoid(train_part[:, -1])
-    #train_boost_loss = log_loss(train_part_label, train_boost_pred)
-    #print('-----Train boost log loss: {}'.format(train_boost_loss))
-    #valide_boost_pred = sigmoid(valide_part[:, -1])
-    #valide_boost_loss = log_loss(valide_part_label, valide_boost_pred)
-    #print('-----valide boost log loss: {}'.format(valide_boost_loss))
-    #train_rank_score = 1 - rank_score(train_part[:, 0, -1], train_part[:, 1, -1], 'heaviside')
-    #train_rank_score_sigmoid = 1 - rank_score(train_part[:, 0, -1], train_part[:, 1, -1], 'sigmoid', 5)
+    train_boost_pred = sigmoid(train_part[:, -1])
+    train_boost_loss = log_loss(train_part_label, train_boost_pred)
+    train_gini = gini_normalized(train_part_label, train_boost_pred)
+    print('-----Train boost log loss: {}, Train boost gini: {}'.format(train_boost_loss, train_gini))
+    valide_boost_pred = sigmoid(valide_part[:, -1])
+    valide_boost_loss = log_loss(valide_part_label, valide_boost_pred)
+    valide_gini = gini_normalized(valide_part_label, valide_boost_pred)
+    print('-----valide boost log loss: {}, Valide boost gini: {}'.format(valide_boost_loss, valide_gini))
+    #train_rank_score = rank_score(train_part[:, 0, -1], train_part[:, 1, -1], 'heaviside')
+    #train_rank_score_sigmoid = rank_score(train_part[:, 0, -1], train_part[:, 1, -1], 'sigmoid', 5)
     #print('-----Train rank score: {} Sigmoid Act: {}'.format(train_rank_score, train_rank_score_sigmoid))
-    #valide_rank_score = 1 - rank_score(valide_part[:, 0, -1], valide_part[:, 1, -1], 'heaviside')
-    #valide_rank_score_sigmoid = 1 - rank_score(valide_part[:, 0, -1], valide_part[:, 1, -1], 'sigmoid', 5)
+    #valide_rank_score = rank_score(valide_part[:, 0, -1], valide_part[:, 1, -1], 'heaviside')
+    #valide_rank_score_sigmoid = rank_score(valide_part[:, 0, -1], valide_part[:, 1, -1], 'sigmoid', 5)
     #print('-----Valide rank score: {} Sigmoid Act: {}'.format(valide_rank_score, valide_rank_score_sigmoid))
     callbacks = [
             # EarlyStopping(monitor='val_loss', patience=2, verbose=0),
-            # GiniWithEarlyStopping(patience=50, verbose=1),
-             PairAUCEarlyStopping(patience=50, verbose=1),
+            GiniWithEarlyStopping(patience=3, verbose=1),
+            # PairAUCEarlyStopping(patience=50, verbose=1),
             ]
 
     #model.fit([train_part[:, continus_binary_indice]] + [train_part[:, i] for i in category_indice],
@@ -173,7 +175,7 @@ def keras_train(train_part, train_part_label, valide_part, valide_part_label, fo
                 shuffle=True, verbose=2,
                 validation_data=(valide_part, valide_part_label)
                 , callbacks=callbacks)
-    model = Model(inputs = model.input, outputs = model.get_layer('minor_pred').output)
+    # model = Model(inputs = model.input, outputs = model.get_layer('minor_pred').output)
     return model
 
 
@@ -349,7 +351,7 @@ if __name__ == "__main__":
     stacking_data = np.load('stacking_data_lgbm.npy')
     stacking_label = np.load('stacking_label_lgbm.npy')
     test = np.load('stacking_test_data_lgbm.npy')
-    # feature_name += ['lgbm_logit']
+    feature_name += ['lgbm_logit']
     feature_name = np.array(feature_name)
     continus_binary_ind = [i for i in range(len(feature_name)) if not feature_name[i].endswith('_cat')]
     #print(len(continus_binary_ind))
@@ -357,10 +359,11 @@ if __name__ == "__main__":
     stacking_data = stacking_data[:, continus_binary_ind]
     test = test[:, continus_binary_ind]
     # Fake test
-    test = np.c_[test, test].reshape((test.shape[0], 2, test.shape[1]))
-    # stacking_data = Get_Pair_data(stacking_data, stacking_label)
-    stacking_data = Get_Pair_data(train[:, continus_binary_ind], train_label)
-    stacking_label = np.ones(stacking_data.shape[0])
+    #test = np.c_[test, test].reshape((test.shape[0], 2, test.shape[1]))
+    #stacking_data = Get_Pair_data(stacking_data, stacking_label)
+    # stacking_data = Get_Pair_data(train[:, continus_binary_ind], train_label)
+    del train
+    # stacking_label = np.ones(stacking_data.shape[0])
     # print('Before shuffle feature name: {}'.format(feature_name))
     #feature_ind = np.array(range(stacking_data.shape[1]))
     #np.random.shuffle(feature_ind)
