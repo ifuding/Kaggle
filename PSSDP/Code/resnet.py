@@ -31,10 +31,12 @@ from sklearn.metrics import log_loss
 from keras import __version__ as keras_version
 
 
-RANK_SCALE = 5
+RANK_SCALE = 1
 DROPOUT_RATE = 0.8
 EPSILON = 1e-7
 L2_NORM = 0
+R_RANK_GAMMA = 0.1
+R_RANK_P = 1
 
 def dense_bn_layer(input_tensor, hn_num, name = None, dropout = True, bn = True):
     """
@@ -91,8 +93,8 @@ def res_net(input_shape, hns = [8, 6, 4, 4], classes = 2):
     """
     inputs = Input(shape=input_shape)
     x = BatchNormalization()(inputs)
-    x = identity_block(x, hns[0], name = 'block0')
-    x = identity_block(x, hns[1], name = 'block1')
+    x = identity_block(x, hns[0], name = 'block0')#, dropout = False)
+    x = identity_block(x, hns[1], name = 'block1')#, dropout = False)
     # x = identity_block(x, hns[2], name = 'block2', dropout = True)
     # x = identity_block(x, hns[3], name = 'block3')
     # x = identity_block(x, hns[3])
@@ -123,7 +125,7 @@ def boosting_dnn(input_shape, hns = [8, 6, 4, 7], classes = 2):
     return model
 
 
-def boosting_res_net(input_shape, hns = [64, 32, 16, 4], classes = 2, out_layer_name = None):
+def boosting_res_net(input_shape, hns = [128, 64, 16, 4], classes = 2, out_layer_name = None):
     """
     """
     inputs = Input(input_shape)
@@ -171,7 +173,9 @@ def rank_net(input_shape, hns = [6, 4, 4, 4], classes = 2):
 def ll_rank_net(input_shape, hns = [128, 64, 4, 4], classes = 2):
     """
     """
-    res_model = boosting_res_net((input_shape[1],), hns)
+    res_model = boosting_dnn((input_shape[1],), hns)
+    # res_model = create_dnn((input_shape[1],), hns)
+    # res_model = boosting_res_net((input_shape[1],), hns)
     # res_model = create_dnn((input_shape[1],), hns)
     # res_model = res_net((input_shape[1],), hns)
     res_model = Model(res_model.input, res_model.get_layer('pre_sigmoid').output)
@@ -191,14 +195,18 @@ def ll_rank_net(input_shape, hns = [128, 64, 4, 4], classes = 2):
     # major_pred_loss = Lambda(lambda x: -1 * K.log(K.clip(1 - x, EPSILON, 1)), name = 'major_loss')(major_proba)
     major_pred_loss = Lambda(lambda x: 1 * x, name = 'major_loss')(major_proba)
 
-    sub = Subtract()([minor_pre_sigmoid, major_pre_sigmoid])
+    # sub = Subtract()([minor_pre_sigmoid, major_pre_sigmoid])
+    sub = Subtract()([minor_proba, major_proba])
     sub = Lambda(lambda x: x * RANK_SCALE, name = 'rank_scale_layer')(sub)
-    rank_proba = Activation('sigmoid')(sub)
-    rank_loss = Lambda(lambda x: 0 * (1 - x), name = 'rank_loss')(rank_proba)
+    sub = Lambda(lambda x: -1 * (x - R_RANK_GAMMA), name = 'r_rank_gamma_layer')(sub)
+    # rank_proba = Activation('sigmoid')(sub)
+    rank_proba = Activation('relu')(sub)
+    # rank_loss = Lambda(lambda x: x ** R_RANK_P, name = 'rank_loss')(rank_proba)
+    rank_loss = Activation('tanh')(rank_proba)
     # rank_loss = Lambda(lambda x: -1 * K.log(K.clip(x, EPSILON, 1)), name = 'rank_loss')(rank_proba)
 
     loss = Add()([minor_pred_loss, rank_loss, major_pred_loss])
-    model = Model(inputs, loss)
+    model = Model(inputs, rank_loss)
     model.compile(optimizer=Nadam(lr = 0.0001), loss=min_pred)
     # model.compile(optimizer=Nadam(lr = 0.001), loss='binary_crossentropy')
 
@@ -265,8 +273,8 @@ def create_embedding_layer():
 def create_dnn(input_shape, HIDDEN_UNITS = [16, 8, 4], DNN_BN = False, DROPOUT_RATE = 0):
     inputs = Input(input_shape)
     x = BatchNormalization()(inputs)
-    x = dense_bn_act_layer(x, HIDDEN_UNITS[0], name = 'hn0')
-    x = dense_bn_act_layer(x, HIDDEN_UNITS[1], name = 'hn1')
+    x = dense_bn_act_layer(x, HIDDEN_UNITS[0], name = 'hn0', dropout = True)
+    x = dense_bn_act_layer(x, HIDDEN_UNITS[1], name = 'hn1', dropout = True)
     # x = dense_bn_act_layer(x, HIDDEN_UNITS[2], name = 'hn2')
     x = Dense(1, name = 'pre_sigmoid')(x)
     proba = Activation('sigmoid')(x)
