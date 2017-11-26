@@ -38,11 +38,11 @@ from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 from resnet import res_net, create_dnn, boosting_res_net, boosting_dnn, boosting_parallel_res_net, rank_net, boosting_rank_net, ll_rank_net
 
-DNN_EPOCHS = 30
+DNN_EPOCHS = 40
 DNN_PATIENCE = 50
 BATCH_SIZE = 1024
 DNN_BN = True
-HIDDEN_UNITS = [8, 6, 8]
+HIDDEN_UNITS = [16, 10, 4]
 DROPOUT_RATE = 0
 LOAD_DATA = True
 
