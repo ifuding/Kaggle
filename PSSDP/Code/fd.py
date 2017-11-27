@@ -19,6 +19,7 @@ from scipy.special import logit
 from scipy.special import expit as sigmoid
 from eval import GiniWithEarlyStopping, PairAUCEarlyStopping, gini_normalized
 from optimize_auc import Get_Pair_data, rank_score
+from functools import reduce
 
 from sklearn.cross_validation import KFold
 from sklearn.preprocessing import OneHotEncoder, LabelEncoder
@@ -40,9 +41,9 @@ from resnet import res_net, create_dnn, boosting_res_net, boosting_dnn, boosting
 
 DNN_EPOCHS = 40
 DNN_PATIENCE = 50
-BATCH_SIZE = 1024
+BATCH_SIZE = 512
 DNN_BN = True
-HIDDEN_UNITS = [16, 10, 4]
+HIDDEN_UNITS = [64, 32, 4]#[100, 100, 100] #[60, 40, 20] #[16, 10, 4]
 DROPOUT_RATE = 0
 LOAD_DATA = True
 
@@ -85,27 +86,6 @@ if LOAD_DATA:
     test = df_array[train_len:, :]
     # return train, train_label, test, test_id
 
-def eval_gini(y_true, y_prob):
-    y_true = np.asarray(y_true)
-    y_true = y_true[np.argsort(y_prob)]
-    ntrue = 0
-    gini = 0
-    delta = 0
-    n = len(y_true)
-    for i in range(n-1, -1, -1):
-        y_i = y_true[i]
-        ntrue += y_i
-        gini += y_i * delta
-        delta += 1 - y_i
-    gini = 1 - 2 * gini / (ntrue * (n - ntrue))
-    return gini
-
-
-def gini_lgbm(preds, dtrain):
-    labels = dtrain.get_label()
-    gini_score = -eval_gini(labels, preds)
-    return 'gini', gini_score, True
-
 
 def xgb_train(train_part, train_part_label, valide_part, valide_part_label, fold_seed):
     """
@@ -120,7 +100,7 @@ def xgb_train(train_part, train_part_label, valide_part, valide_part_label, fold
             'silent': True
         }
     watchlist = [(xgb.DMatrix(train_part, train_part_label), 'train'), (xgb.DMatrix(valide_part, valide_part_label), 'valid')]
-    model = xgb.train(params, xgb.DMatrix(train_part, train_part_label), 1000,  watchlist, verbose_eval=50, early_stopping_rounds=100)
+    model = xgb.train(params, xgb.DMatrix(train_part, train_part_label), 1000,  watchlist, verbose_eval=50, early_stopping_rounds=10)
     #cv_result = xgb.cv(params, xgb.DMatrix(x1, y1), 1000, nfold = fold, verbose_eval=50, early_stopping_rounds = 100)
     #cv_result.to_csv('xgb_cv_result', index = False)
     #exit(0)
@@ -133,7 +113,7 @@ def keras_train(train_part, train_part_label, valide_part, valide_part_label, fo
     """
     print("-----Keras training-----")
 
-    model = ll_rank_net(train_part.shape[1:], HIDDEN_UNITS)
+    # model = ll_rank_net(train_part.shape[1:], HIDDEN_UNITS)
     # model = rank_net(train_part.shape[1:])
     # print(model.summary())
     #print(model.layers)
@@ -141,26 +121,26 @@ def keras_train(train_part, train_part_label, valide_part, valide_part_label, fo
     # model = boosting_parallel_res_net((train_part.shape[1],))
     # model = boosting_res_net((train_part.shape[1],))
     # model = res_net((train_part.shape[1],))
-    # model = create_dnn(train_part.shape[1])
+    model = create_dnn((train_part.shape[1],), HIDDEN_UNITS)
     # model = create_embedding_model()
-    #train_boost_pred = sigmoid(train_part[:, -1])
-    #train_boost_loss = log_loss(train_part_label, train_boost_pred)
-    #train_gini = gini_normalized(train_part_label, train_boost_pred)
-    #print('-----Train boost log loss: {}, Train boost gini: {}'.format(train_boost_loss, train_gini))
-    #valide_boost_pred = sigmoid(valide_part[:, -1])
-    #valide_boost_loss = log_loss(valide_part_label, valide_boost_pred)
-    #valide_gini = gini_normalized(valide_part_label, valide_boost_pred)
-    #print('-----valide boost log loss: {}, Valide boost gini: {}'.format(valide_boost_loss, valide_gini))
-    train_rank_score = rank_score(train_part[:, 0, -1], train_part[:, 1, -1], 'heaviside')
-    train_rank_score_sigmoid = rank_score(train_part[:, 0, -1], train_part[:, 1, -1], 'sigmoid', 5)
-    print('-----Train rank score: {} Sigmoid Act: {}'.format(train_rank_score, train_rank_score_sigmoid))
-    valide_rank_score = rank_score(valide_part[:, 0, -1], valide_part[:, 1, -1], 'heaviside')
-    valide_rank_score_sigmoid = rank_score(valide_part[:, 0, -1], valide_part[:, 1, -1], 'sigmoid', 5)
-    print('-----Valide rank score: {} Sigmoid Act: {}'.format(valide_rank_score, valide_rank_score_sigmoid))
+    train_boost_pred = sigmoid(train_part[:, -1])
+    train_boost_loss = log_loss(train_part_label, train_boost_pred)
+    train_gini = gini_normalized(train_part_label, train_boost_pred)
+    print('-----Train boost log loss: {}, Train boost gini: {}'.format(train_boost_loss, train_gini))
+    valide_boost_pred = sigmoid(valide_part[:, -1])
+    valide_boost_loss = log_loss(valide_part_label, valide_boost_pred)
+    valide_gini = gini_normalized(valide_part_label, valide_boost_pred)
+    print('-----valide boost log loss: {}, Valide boost gini: {}'.format(valide_boost_loss, valide_gini))
+    #train_rank_score = rank_score(train_part[:, 0, -1], train_part[:, 1, -1], 'heaviside')
+    #train_rank_score_sigmoid = rank_score(train_part[:, 0, -1], train_part[:, 1, -1], 'sigmoid', 5)
+    #print('-----Train rank score: {} Sigmoid Act: {}'.format(train_rank_score, train_rank_score_sigmoid))
+    #valide_rank_score = rank_score(valide_part[:, 0, -1], valide_part[:, 1, -1], 'heaviside')
+    #valide_rank_score_sigmoid = rank_score(valide_part[:, 0, -1], valide_part[:, 1, -1], 'sigmoid', 5)
+    #print('-----Valide rank score: {} Sigmoid Act: {}'.format(valide_rank_score, valide_rank_score_sigmoid))
     callbacks = [
             # EarlyStopping(monitor='val_loss', patience=2, verbose=0),
-            # GiniWithEarlyStopping(patience=DNN_PATIENCE, verbose=1),
-            PairAUCEarlyStopping(patience=50, verbose=1),
+            GiniWithEarlyStopping(patience=DNN_PATIENCE, verbose=1),
+            # PairAUCEarlyStopping(patience=50, verbose=1),
             ]
 
     #model.fit([train_part[:, continus_binary_indice]] + [train_part[:, i] for i in category_indice],
@@ -349,10 +329,13 @@ def gen_sub(models, merge_features, test_id, preds = None):
     submission.to_csv(sub_name, index=False)
 
 if __name__ == "__main__":
-    stacking_data = np.load('stacking_data_lgbm.npy')
-    stacking_label = np.load('stacking_label_lgbm.npy')
-    test = np.load('stacking_test_data_lgbm.npy')
-    feature_name += ['lgbm_logit']
+    stacking_data = np.load('stacking_data_lx.npy')
+    stacking_label = np.load('stacking_label_lx.npy')
+    test = np.load('test_lx.npy')
+    # logit
+    stacking_data[:, -2:] = logit(stacking_data[:, -2:])
+    test[:, -2:] = logit(test[:, -2:])
+    feature_name += ['lgbm_logit', 'xgbm_logit']
     feature_name = np.array(feature_name)
     continus_binary_ind = [i for i in range(len(feature_name)) if not feature_name[i].endswith('_cat')]
     #print(len(continus_binary_ind))
@@ -360,11 +343,11 @@ if __name__ == "__main__":
     stacking_data = stacking_data[:, continus_binary_ind]
     test = test[:, continus_binary_ind]
     # Fake test
-    test = np.c_[test, test].reshape((test.shape[0], 2, test.shape[1]))
-    stacking_data = Get_Pair_data(stacking_data, stacking_label)
+    # test = np.c_[test, test].reshape((test.shape[0], 2, test.shape[1]))
+    # stacking_data = Get_Pair_data(stacking_data, stacking_label)
     # stacking_data = Get_Pair_data(train[:, continus_binary_ind], train_label)
     del train
-    stacking_label = np.ones(stacking_data.shape[0])
+    # stacking_label = np.ones(stacking_data.shape[0])
     # print('Before shuffle feature name: {}'.format(feature_name))
     #feature_ind = np.array(range(stacking_data.shape[1]))
     #np.random.shuffle(feature_ind)
@@ -373,7 +356,10 @@ if __name__ == "__main__":
     #feature_name = feature_name[feature_ind]
     # print('After shuffle feature name: {}'.format(feature_name))
     #pilot_preds = models_eval(pilot_models, train)
-    #sample_data, sample_label, weight = lcc_sample(train_label, pilot_preds, train, 2)
     models, stacking_data, stacking_label, test = nfold_train(stacking_data, stacking_label, 5, ['k'], False, None, None, test)
+    #models, stacking_data, stacking_label, test = nfold_train(train, train_label, 5, ['l', 'x'], True, None, None, test)
+    #np.save('stacking_data_lx', stacking_data)
+    #np.save('stacking_label_lx', stacking_label)
+    #np.save('test_lx', test)
     # lcc_preds = lcc_ensemble(pilot_models, sample_models, test)
-    gen_sub(models, test, test_id)
+    # gen_sub(models, test, test_id)
