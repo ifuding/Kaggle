@@ -41,9 +41,9 @@ from resnet import res_net, create_dnn, boosting_res_net, boosting_dnn, boosting
 
 DNN_EPOCHS = 40
 DNN_PATIENCE = 50
-BATCH_SIZE = 512
+BATCH_SIZE = 256
 DNN_BN = True
-HIDDEN_UNITS = [64, 32, 4]#[100, 100, 100] #[60, 40, 20] #[16, 10, 4]
+HIDDEN_UNITS = [30, 24, 18, 12]#[100, 100, 100] #[60, 40, 20] #[16, 10, 4]
 DROPOUT_RATE = 0
 LOAD_DATA = True
 
@@ -120,8 +120,8 @@ def keras_train(train_part, train_part_label, valide_part, valide_part_label, fo
     # model = boosting_dnn((train_part.shape[1],), HIDDEN_UNITS)
     # model = boosting_parallel_res_net((train_part.shape[1],))
     # model = boosting_res_net((train_part.shape[1],))
-    # model = res_net((train_part.shape[1],))
-    model = create_dnn((train_part.shape[1],), HIDDEN_UNITS)
+    model = res_net((train_part.shape[1],),  HIDDEN_UNITS)
+    # model = create_dnn((train_part.shape[1],), HIDDEN_UNITS)
     # model = create_embedding_model()
     train_boost_pred = sigmoid(train_part[:, -1])
     train_boost_loss = log_loss(train_part_label, train_boost_pred)
