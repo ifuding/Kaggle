@@ -3,6 +3,8 @@ from scipy.special import expit as sigmoid
 from sklearn.metrics import roc_auc_score
 from multiprocessing import Pool
 import concurrent.futures
+from sklearn import preprocessing
+import pandas as pd
 
 def heaviside(x):
     g = 0
@@ -45,6 +47,27 @@ def lgbm_full_rank_score(minor_data, major_data):
     return sum_score
 
 
+def MinMaxNormalize(input_data, scale_factor = 65535):
+    min_max_scaler = preprocessing.MinMaxScaler()
+    normalize_data = min_max_scaler.fit_transform(input_data)
+    normalize_data = (normalize_data * scale_factor).astype(np.uint16)
+    return normalize_data
+
+
+def copy_pair(target_data, minor_data, major_data, minor_ind, pair_avg):
+    # q_indice = np.arange(major_data.shape[0])
+    # np.random.shuffle(q_indice)
+    begin = minor_ind * pair_avg
+    end = begin + pair_avg
+    q_range = np.arange(begin, end) % major_data.shape[0]
+    target_data[begin:end, 0] = minor_data[minor_ind].astype(np.float32)
+    target_data[begin:end, 1] = major_data[q_range].astype(np.float32)
+    #re = np.zeros((pair_avg, 2, minor_data.shape[1]), dtype = np.float32)
+    #re[:, 0] = minor_data[minor_ind].astype(np.float32)
+    #re[:, 1] = major_data[q_indice[:pair_avg]].astype(np.float32)
+    return True #re
+
+
 def Get_Pair_data(data, label):
     minor = 0
     major = 1
@@ -59,24 +82,45 @@ def Get_Pair_data(data, label):
     P = len(minor_data)
     Q = len(major_data)
     print("P: {} Q: {}".format(P, Q))
-    # lgbm_rank = lgbm_full_rank_score(minor_data[:, -1], major_data[:, -1])
-    # auc = roc_auc_score(label, sigmoid(data[:, -1]))
-    # lgbm_rank /= float(P * Q)
-    #print('lgbm full rank: {} roc_auc: {}'.format(lgbm_rank, auc))
-    #exit(0)
-    pair_len = 5 * Q
-    pair_data = np.zeros((pair_len, 2, data.shape[1]), dtype = 'float32')
-    for k in range(pair_len):
-        pair_data[k][0] = minor_data[k % P].astype(np.float32)
-        pair_data[k][1] = major_data[k % Q].astype(np.float32)
-    sub_data = pair_data[:, 0, -1] - pair_data[:, 1, -1]
-    #for i in range(100):
-    #    factor = 1. + 0.1 * i
-    #    lgbm_rank = np.mean(sigmoid(factor * sub_data))
-    #    print('lgbm full rank: {} roc_auc: {} factor: {}'.format(lgbm_rank, auc, factor))
-    #exit(0)
+    #pair_len = 5 * Q
+    #pair_data = np.zeros((pair_len, 2, data.shape[1]), dtype = 'float32')
+    #for k in range(pair_len):
+    #    pair_data[k][0] = minor_data[k % P].astype(np.float32)
+    #    pair_data[k][1] = major_data[k % Q].astype(np.float32)
+    # data = MinMaxNormalize(data)
+    pair_avg = 300
+    pair_len = pair_avg * P
+    pair_data = np.zeros((pair_len, 2, data.shape[1]), dtype = np.float32)
+    q_indice = np.arange(Q)
+    #i = 0
+    #for k in range(P):
+    #    np.random.shuffle(q_indice)
+    #    pair_data[i:i+pair_avg, 0] = minor_data[k].astype(np.float32)
+    #    pair_data[i:i+pair_avg, 1] = major_data[q_indice[:pair_avg]].astype(np.float32)
+    #    i += pair_avg
+    # pair_data = []
+    worker_num = 8
+    begin = 0
+    end = min(begin + worker_num, P)
+    while begin < P:
+        with concurrent.futures.ThreadPoolExecutor(max_workers = worker_num) as executor:
+            future_predict = {executor.submit(copy_pair, pair_data, minor_data,
+                major_data, ind, pair_avg): ind for ind in range(begin, end)}
+            for future in concurrent.futures.as_completed(future_predict):
+                ind = future_predict[future]
+                try:
+                    re = future.result()
+                    # pair_data.append(re)
+                except Exception as exc:
+                    print('%dth feature generated an exception: %s' % (ind, exc))
+        if end % 500 == 0:
+            print('Process pair: {} * {}'.format(end, pair_avg))
+        begin = end
+        end = min(begin + worker_num, P)
+    # pd.DataFrame(pair_data.reshape((pair_len, -1))).to_csv('pair_test', index = False)
     print('shape: {} dtype: {}'.format(pair_data.shape, pair_data.dtype))
     return pair_data
+
 
 def rank_score(minor_preds, major_preds, act = 'sigmoid', factor = 1):
     if act == 'sigmoid':

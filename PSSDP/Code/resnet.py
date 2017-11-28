@@ -32,11 +32,11 @@ from keras import __version__ as keras_version
 
 
 RANK_SCALE = 1
-DROPOUT_RATE = 0.7 #0.35
+DROPOUT_RATE = 0.9 #0.35
 EPSILON = 1e-7
 L2_NORM = 0
-R_RANK_GAMMA = 0.2
-R_RANK_P = 1
+R_RANK_GAMMA = 0.1
+R_RANK_P = 1.5
 
 def dense_bn_layer(input_tensor, hn_num, name = None, dropout = True, bn = True):
     """
@@ -68,7 +68,8 @@ def identity_block(input_tensor, hn_num, name = None, dropout = True):
     """
     adjust_layer = dense_bn_layer(input_tensor, hn_num, dropout = dropout)
     x = Activation('relu')(adjust_layer)
-    x = dense_bn_act_layer(x, hn_num * 3 / 2, dropout = dropout)
+    # x = dense_bn_act_layer(x, hn_num * 3 / 2, dropout = dropout)
+    x = dense_bn_act_layer(x, hn_num, dropout = dropout)
     x = dense_bn_layer(x, hn_num, dropout = dropout)
     x = Add()([x, adjust_layer])
     x = Activation('relu', name = name)(x)
@@ -93,12 +94,10 @@ def res_net(input_shape, hns = [8, 6, 4, 4], classes = 2):
     """
     inputs = Input(shape=input_shape)
     x = BatchNormalization()(inputs)
-    x = identity_block(x, hns[0], name = 'block0', dropout = False)
-    x = identity_block(x, hns[1], name = 'block1', dropout = False)
-    x = identity_block(x, hns[2], name = 'block2', dropout = False)
-    x = identity_block(x, hns[3], name = 'block3', dropout = False)
-    # x = identity_block(x, hns[3], name = 'block3')
-    # x = identity_block(x, hns[3])
+    x = identity_block(x, hns[0], name = 'block0', dropout = True)
+    x = identity_block(x, hns[1], name = 'block1', dropout = True)
+    x = identity_block(x, hns[2], name = 'block2', dropout = True)
+    #x = identity_block(x, hns[3], name = 'block3', dropout = True)
     x = Dense(1, name = 'pre_sigmoid')(x)
     x = BatchNormalization()(x)
     proba = Activation('sigmoid')(x)
@@ -137,8 +136,9 @@ def boosting_res_net(input_shape, hns = [128, 64, 16, 4], classes = 2, out_layer
     # res_module
     res_inputs = Lambda(lambda x: x[:, :-1])(inputs)
     res_model = res_net((input_shape[0] - 1, ), hns)
-    res_module = Model(res_model.input, res_model.get_layer('block1').output)(res_inputs)
-    res_pre_sigmoid = Dense(1)(res_module)
+    #res_inputs = inputs
+    #res_model = res_net(input_shape, hns)
+    res_pre_sigmoid = Model(res_model.input, res_model.get_layer('pre_sigmoid').output)(res_inputs)
     # boost
     pre_sigmoid = Add(name = 'pre_sigmoid')([res_pre_sigmoid, boost_input])
     proba = Activation('sigmoid', name = out_layer_name)(pre_sigmoid)
@@ -177,9 +177,9 @@ def rank_net(input_shape, hns = [6, 4, 4, 4], classes = 2):
 def ll_rank_net(input_shape, hns = [128, 64, 4, 4], classes = 2):
     """
     """
-    res_model = boosting_dnn((input_shape[1],), hns)
+    # res_model = boosting_dnn((input_shape[1],), hns)
     # res_model = create_dnn((input_shape[1],), hns)
-    # res_model = boosting_res_net((input_shape[1],), hns)
+    res_model = boosting_res_net((input_shape[1],), hns)
     # res_model = create_dnn((input_shape[1],), hns)
     # res_model = res_net((input_shape[1],), hns)
     res_model = Model(res_model.input, res_model.get_layer('pre_sigmoid').output)
@@ -211,7 +211,7 @@ def ll_rank_net(input_shape, hns = [128, 64, 4, 4], classes = 2):
 
     loss = Add()([minor_pred_loss, rank_loss, major_pred_loss])
     model = Model(inputs, rank_loss)
-    model.compile(optimizer=Nadam(lr = 0.00025), loss=min_pred)
+    model.compile(optimizer=Nadam(), loss=min_pred)
     # model.compile(optimizer=Nadam(lr = 0.001), loss='binary_crossentropy')
 
     return model
@@ -277,9 +277,9 @@ def create_embedding_layer():
 def create_dnn(input_shape, HIDDEN_UNITS = [16, 8, 4], DNN_BN = False, DROPOUT_RATE = 0):
     inputs = Input(input_shape)
     x = BatchNormalization()(inputs)
-    x = dense_bn_act_layer(x, HIDDEN_UNITS[0], name = 'hn0', dropout = False)
-    x = dense_bn_act_layer(x, HIDDEN_UNITS[1], name = 'hn1', dropout = False)
-    # x = dense_bn_act_layer(x, HIDDEN_UNITS[2], name = 'hn2', dropout = True)
+    x = dense_bn_act_layer(x, HIDDEN_UNITS[0], name = 'hn0', dropout = True)
+    x = dense_bn_act_layer(x, HIDDEN_UNITS[1], name = 'hn1', dropout = True)
+    x = dense_bn_act_layer(x, HIDDEN_UNITS[2], name = 'hn2', dropout = True)
     x = Dense(1, name = 'pre_sigmoid')(x)
     proba = Activation('sigmoid')(x)
     model = Model(inputs, x)
