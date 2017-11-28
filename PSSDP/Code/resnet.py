@@ -32,11 +32,11 @@ from keras import __version__ as keras_version
 
 
 RANK_SCALE = 1
-DROPOUT_RATE = 0.9 #0.35
+DROPOUT_RATE = 0.8 #0.35
 EPSILON = 1e-7
 L2_NORM = 0
 R_RANK_GAMMA = 0.1
-R_RANK_P = 1.5
+R_RANK_P = 1
 
 def dense_bn_layer(input_tensor, hn_num, name = None, dropout = True, bn = True):
     """
@@ -178,8 +178,8 @@ def ll_rank_net(input_shape, hns = [128, 64, 4, 4], classes = 2):
     """
     """
     # res_model = boosting_dnn((input_shape[1],), hns)
-    # res_model = create_dnn((input_shape[1],), hns)
-    res_model = boosting_res_net((input_shape[1],), hns)
+    res_model = create_dnn((input_shape[1],), hns)
+    # res_model = boosting_res_net((input_shape[1],), hns)
     # res_model = create_dnn((input_shape[1],), hns)
     # res_model = res_net((input_shape[1],), hns)
     res_model = Model(res_model.input, res_model.get_layer('pre_sigmoid').output)
@@ -279,7 +279,7 @@ def create_dnn(input_shape, HIDDEN_UNITS = [16, 8, 4], DNN_BN = False, DROPOUT_R
     x = BatchNormalization()(inputs)
     x = dense_bn_act_layer(x, HIDDEN_UNITS[0], name = 'hn0', dropout = True)
     x = dense_bn_act_layer(x, HIDDEN_UNITS[1], name = 'hn1', dropout = True)
-    x = dense_bn_act_layer(x, HIDDEN_UNITS[2], name = 'hn2', dropout = True)
+    # x = dense_bn_act_layer(x, HIDDEN_UNITS[2], name = 'hn2', dropout = True)
     x = Dense(1, name = 'pre_sigmoid')(x)
     proba = Activation('sigmoid')(x)
     model = Model(inputs, x)

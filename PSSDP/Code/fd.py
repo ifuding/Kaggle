@@ -39,11 +39,11 @@ from keras.preprocessing.text import Tokenizer
 from keras.preprocessing.sequence import pad_sequences
 from resnet import res_net, create_dnn, boosting_res_net, boosting_dnn, boosting_parallel_res_net, rank_net, boosting_rank_net, ll_rank_net
 
-DNN_EPOCHS = 10
-DNN_PATIENCE = 3
-BATCH_SIZE = 10240
+DNN_EPOCHS = 30
+DNN_PATIENCE = 30
+BATCH_SIZE = 2048
 DNN_BN = True
-HIDDEN_UNITS = [60, 40, 20]#[100, 100, 100] #[60, 40, 20] #[16, 10, 4]
+HIDDEN_UNITS = [30, 20, 8]#[100, 100, 100] #[60, 40, 20] #[16, 10, 4]
 DROPOUT_RATE = 0
 LOAD_DATA = True
 
@@ -165,49 +165,49 @@ def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fol
     """
     print("-----LGBM training-----")
 
-    d_train = lgb.Dataset(train_part, train_part_label, weight = train_weight)
-    d_valide = lgb.Dataset(valide_part, valide_part_label, weight = valide_weight)
+    d_train = lgb.Dataset(train_part, train_part_label, weight = train_weight, init_score = train_part[:, -1])
+    d_valide = lgb.Dataset(valide_part, valide_part_label, weight = valide_weight, init_score = valide_part[:, -1])
     params = {
             'task': 'train',
             'boosting_type': 'gbdt',
             'objective': 'binary',
-            'metric': {'binary_logloss'},
+            'metric': {'binary_logloss', 'auc'},
           #  'feature_fraction': 0.9,
           #  'bagging_fraction': 0.95,
           #  'bagging_freq': 5,
             'num_leaves': 60, #60, #40, # 60,
           #  'min_sum_hessian_in_leaf': 20,
-            'max_depth': 10,#12, #6, # 10,
-            'learning_rate': 0.028, # 0.025,
-           'feature_fraction': 0.5,#0.35, # 0.6
+            'max_depth': 4,#12, #6, # 10,
+            'learning_rate': 0.02, # 0.025,
+           'feature_fraction': 0.35,#0.35, # 0.6
             'verbose': 0,
           #   'valid_sets': [d_valide],
-            'num_boost_round': 400, #361,
+            'num_boost_round': 450, #361,
             'feature_fraction_seed': fold_seed,
             #'bagging_fraction': 0.9,
             # 'bagging_freq': 15,
             #'bagging_seed': fold_seed,
-            'early_stopping_round': 10,
+            'early_stopping_round': 50,
             # 'random_state': 10
             # 'verbose_eval': 20
             #'min_data_in_leaf': 665
         }
 
-    bst = lgb.train(
-                    params ,
-                    d_train,
-                    verbose_eval = 50,
-                    valid_sets = [d_train, d_valide],
-                    feature_name=['f' + str(i + 1) for i in range(train_part.shape[1])],
-                    #feval = gini_lgbm
-                    #num_boost_round = 1
-                    )
+    #bst = lgb.train(
+    #                params ,
+    #                d_train,
+    #                verbose_eval = 50,
+    #                valid_sets = [d_train, d_valide],
+    #                feature_name=['f' + str(i + 1) for i in range(train_part.shape[1])],
+    #                #feval = gini_lgbm
+    #                #num_boost_round = 1
+    #                )
     #feature_imp = bst.feature_importance(importance_type = 'gain')
     #print (feature_name[np.argsort(feature_imp)])
     #exit(0)
-    #cv_result = lgb.cv(params, d_train, nfold=fold) #, feval = gini_lgbm)
-    #pd.DataFrame(cv_result).to_csv('cv_result', index = False)
-    #exit(0)
+    cv_result = lgb.cv(params, d_train, nfold=fold) #, feval = gini_lgbm)
+    pd.DataFrame(cv_result).to_csv('cv_result', index = False)
+    exit(0)
     return bst
 
 
@@ -331,23 +331,23 @@ if __name__ == "__main__":
     stacking_label = np.load('stacking_label_lx.npy')
     test = np.load('test_lx.npy')
     # logit
-    #stacking_data[:, -2:] = logit(stacking_data[:, -2:])
-    #test[:, -2:] = logit(test[:, -2:])
-    stacking_data[:, -2:] = stacking_data[:, [-1, -2]]
-    test[:, -2:] = test[:, [-1, -2]]
-    feature_name += ['lgbm_logit', 'xgbm_logit']
-    feature_name = np.array(feature_name)
-    continus_binary_ind = [i for i in range(len(feature_name)) if not feature_name[i].endswith('_cat')]
+    stacking_data[:, -2:] = logit(stacking_data[:, -2:])
+    test[:, -2:] = logit(test[:, -2:])
+    #stacking_data[:, -2:] = stacking_data[:, [-1, -2]]
+    #test[:, -2:] = test[:, [-1, -2]]
+    #feature_name += ['lgbm_logit', 'xgbm_logit']
+    #feature_name = np.array(feature_name)
+    #continus_binary_ind = [i for i in range(len(feature_name)) if not feature_name[i].endswith('_cat')]
     #print(len(continus_binary_ind))
     #exit(0)
-    stacking_data = stacking_data[:, continus_binary_ind]
-    test = test[:, continus_binary_ind]
-    # Fake test
-    test = np.c_[test, test].reshape((test.shape[0], 2, test.shape[1]))
-    stacking_data = Get_Pair_data(stacking_data, stacking_label)
-    stacking_label = np.ones(stacking_data.shape[0])
-    # stacking_data = Get_Pair_data(train[:, continus_binary_ind], train_label)
     del train
+    #stacking_data = stacking_data[:, continus_binary_ind]
+    #test = test[:, continus_binary_ind]
+    # Fake test
+    #test = np.c_[test, test].reshape((test.shape[0], 2, test.shape[1]))
+    #stacking_data = Get_Pair_data(stacking_data, stacking_label)
+    #stacking_label = np.ones(stacking_data.shape[0])
+    # stacking_data = Get_Pair_data(train[:, continus_binary_ind], train_label)
     # print('Before shuffle feature name: {}'.format(feature_name))
     #feature_ind = np.array(range(stacking_data.shape[1]))
     #np.random.shuffle(feature_ind)
@@ -356,10 +356,10 @@ if __name__ == "__main__":
     #feature_name = feature_name[feature_ind]
     # print('After shuffle feature name: {}'.format(feature_name))
     #pilot_preds = models_eval(pilot_models, train)
-    models, stacking_data, stacking_label, test = nfold_train(stacking_data, stacking_label, 5, ['k'], False, None, None, test)
+    models, stacking_data, stacking_label, test = nfold_train(stacking_data, stacking_label, 5, ['l'], False, stacking_data, stacking_label, test)
     #models, stacking_data, stacking_label, test = nfold_train(train, train_label, 5, ['l', 'x'], True, None, None, test)
     #np.save('stacking_data_lx', stacking_data)
     #np.save('stacking_label_lx', stacking_label)
     #np.save('test_lx', test)
     # lcc_preds = lcc_ensemble(pilot_models, sample_models, test)
-    # gen_sub(models, test, test_id)
+    gen_sub(models, test, test_id)

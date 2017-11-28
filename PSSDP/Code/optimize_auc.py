@@ -48,9 +48,12 @@ def lgbm_full_rank_score(minor_data, major_data):
 
 
 def MinMaxNormalize(input_data, scale_factor = 65535):
+    # pd.DataFrame(input_data[1:1000]).to_csv('float_data', index = False)
     min_max_scaler = preprocessing.MinMaxScaler()
     normalize_data = min_max_scaler.fit_transform(input_data)
-    normalize_data = (normalize_data * scale_factor).astype(np.uint16)
+    normalize_data = (normalize_data * scale_factor).astype(np.uint8)
+    # pd.DataFrame(normalize_data[1:1000]).to_csv('normalize_data', index = False)
+    # exit(0)
     return normalize_data
 
 
@@ -60,8 +63,8 @@ def copy_pair(target_data, minor_data, major_data, minor_ind, pair_avg):
     begin = minor_ind * pair_avg
     end = begin + pair_avg
     q_range = np.arange(begin, end) % major_data.shape[0]
-    target_data[begin:end, 0] = minor_data[minor_ind].astype(np.float32)
-    target_data[begin:end, 1] = major_data[q_range].astype(np.float32)
+    target_data[begin:end, 0] = minor_data[minor_ind].astype(np.uint8) #float32)
+    target_data[begin:end, 1] = major_data[q_range].astype(np.uint8) #float32)
     #re = np.zeros((pair_avg, 2, minor_data.shape[1]), dtype = np.float32)
     #re[:, 0] = minor_data[minor_ind].astype(np.float32)
     #re[:, 1] = major_data[q_indice[:pair_avg]].astype(np.float32)
@@ -87,10 +90,10 @@ def Get_Pair_data(data, label):
     #for k in range(pair_len):
     #    pair_data[k][0] = minor_data[k % P].astype(np.float32)
     #    pair_data[k][1] = major_data[k % Q].astype(np.float32)
-    # data = MinMaxNormalize(data)
-    pair_avg = 300
+    data = MinMaxNormalize(data, 255)
+    pair_avg = 500
     pair_len = pair_avg * P
-    pair_data = np.zeros((pair_len, 2, data.shape[1]), dtype = np.float32)
+    pair_data = np.zeros((pair_len, 2, data.shape[1]), dtype = np.uint8) #float32)
     q_indice = np.arange(Q)
     #i = 0
     #for k in range(P):
