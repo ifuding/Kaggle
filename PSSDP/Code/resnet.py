@@ -14,7 +14,6 @@ import os
 from lcc_sample import lcc_sample
 from eval import min_pred
 
-from sklearn.cross_validation import KFold
 from sklearn.preprocessing import OneHotEncoder, LabelEncoder
 from keras.models import Sequential, Model
 from keras.layers.core import Dense, Dropout, Flatten, Reshape
