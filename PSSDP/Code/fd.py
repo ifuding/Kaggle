@@ -165,8 +165,8 @@ def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fol
     """
     print("-----LGBM training-----")
 
-    d_train = lgb.Dataset(train_part, train_part_label, weight = train_weight, init_score = train_part[:, -1])
-    d_valide = lgb.Dataset(valide_part, valide_part_label, weight = valide_weight, init_score = valide_part[:, -1])
+    d_train = lgb.Dataset(train_part[:, :-2], train_part_label, weight = train_weight)#, init_score = train_part[:, -1])
+    d_valide = lgb.Dataset(valide_part[:, :-2], valide_part_label, weight = valide_weight)#, init_score = valide_part[:, -1])
     params = {
             'task': 'train',
             'boosting_type': 'gbdt',
@@ -176,18 +176,18 @@ def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fol
           #  'bagging_fraction': 0.95,
           #  'bagging_freq': 5,
             'num_leaves': 60, #60, #40, # 60,
-          #  'min_sum_hessian_in_leaf': 20,
-            'max_depth': 4,#12, #6, # 10,
+            'min_sum_hessian_in_leaf': 10,
+            'max_depth': 12,#12, #6, # 10,
             'learning_rate': 0.02, # 0.025,
            'feature_fraction': 0.35,#0.35, # 0.6
             'verbose': 0,
           #   'valid_sets': [d_valide],
-            'num_boost_round': 450, #361,
+            'num_boost_round': 632, #361,
             'feature_fraction_seed': fold_seed,
             #'bagging_fraction': 0.9,
             # 'bagging_freq': 15,
             #'bagging_seed': fold_seed,
-            'early_stopping_round': 50,
+            #'early_stopping_round': 50,
             # 'random_state': 10
             # 'verbose_eval': 20
             #'min_data_in_leaf': 665
@@ -198,10 +198,15 @@ def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fol
     #                d_train,
     #                verbose_eval = 50,
     #                valid_sets = [d_train, d_valide],
-    #                feature_name=['f' + str(i + 1) for i in range(train_part.shape[1])],
+    #                # feature_name=['f' + str(i + 1) for i in range(train_part.shape[1])],
     #                #feval = gini_lgbm
     #                #num_boost_round = 1
     #                )
+    #pred = model_eval(bst, 'l', valide_part)
+    #print(pred[:10])
+    #print(valide_part_label[:10])
+    #print(valide_part[:10, -1])
+    #exit(0)
     #feature_imp = bst.feature_importance(importance_type = 'gain')
     #print (feature_name[np.argsort(feature_imp)])
     #exit(0)
