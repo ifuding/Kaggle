@@ -21,7 +21,7 @@ from eval import GiniWithEarlyStopping, PairAUCEarlyStopping, gini_normalized
 from optimize_auc import Get_Pair_data, rank_score
 from functools import reduce
 
-from sklearn.cross_validation import KFold
+from sklearn.model_selection import KFold
 from sklearn.preprocessing import OneHotEncoder, LabelEncoder
 from keras.models import Sequential, Model
 from keras.layers.core import Dense, Dropout, Flatten, Reshape
@@ -169,39 +169,37 @@ def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fol
     d_valide = lgb.Dataset(valide_part[:, :-2], valide_part_label, weight = valide_weight)#, init_score = valide_part[:, -1])
     params = {
             'task': 'train',
-            'boosting_type': 'gbdt',
+            'boosting_type': 'rf', #'gbdt',
             'objective': 'binary',
-            'metric': {'binary_logloss', 'auc'},
-          #  'feature_fraction': 0.9,
-          #  'bagging_fraction': 0.95,
-          #  'bagging_freq': 5,
+            'metric': {'auc'},
             'num_leaves': 60, #60, #40, # 60,
             'min_sum_hessian_in_leaf': 10,
             'max_depth': 12,#12, #6, # 10,
-            'learning_rate': 0.02, # 0.025,
+            'learning_rate': 0.015, # 0.025,
            'feature_fraction': 0.35,#0.35, # 0.6
             'verbose': 0,
           #   'valid_sets': [d_valide],
-            'num_boost_round': 632, #361,
+            'num_boost_round': 800, #361,
             'feature_fraction_seed': fold_seed,
-            #'bagging_fraction': 0.9,
-            # 'bagging_freq': 15,
-            #'bagging_seed': fold_seed,
+            #'drop_rate': 0.05,
+            'bagging_fraction': 0.8,
+            'bagging_freq': 20,
+            'bagging_seed': fold_seed,
             #'early_stopping_round': 50,
             # 'random_state': 10
             # 'verbose_eval': 20
             #'min_data_in_leaf': 665
         }
 
-    #bst = lgb.train(
-    #                params ,
-    #                d_train,
-    #                verbose_eval = 50,
-    #                valid_sets = [d_train, d_valide],
-    #                # feature_name=['f' + str(i + 1) for i in range(train_part.shape[1])],
-    #                #feval = gini_lgbm
-    #                #num_boost_round = 1
-    #                )
+    bst = lgb.train(
+                    params ,
+                    d_train,
+                    verbose_eval = 50,
+                    valid_sets = [d_train, d_valide],
+                    # feature_name=['f' + str(i + 1) for i in range(train_part.shape[1])],
+                    #feval = gini_lgbm
+                    #num_boost_round = 1
+                    )
     #pred = model_eval(bst, 'l', valide_part)
     #print(pred[:10])
     #print(valide_part_label[:10])
@@ -225,15 +223,16 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
     print("Over all training size:")
     print(train_data.shape)
 
-    kf = KFold(len(train_label), n_folds=fold, shuffle=True)
+    kf = KFold(n_splits=fold, shuffle=False)
 
     stacking_data = None
     stacking_label = None
     test_preds = None
     num_fold = 0
     models = []
-    for train_index, test_index in kf:
+    for train_index, test_index in kf.split(train_data):
         print('fold: %d th train :-)' % (num_fold))
+        print('Train size: {} Valide size: {}'.format(train_index.shape[0], test_index.shape[0]))
         if valide_label is None:
             train_part = train_data[train_index]
             train_part_label = train_label[train_index]
@@ -361,7 +360,7 @@ if __name__ == "__main__":
     #feature_name = feature_name[feature_ind]
     # print('After shuffle feature name: {}'.format(feature_name))
     #pilot_preds = models_eval(pilot_models, train)
-    models, stacking_data, stacking_label, test = nfold_train(stacking_data, stacking_label, 5, ['l'], False, stacking_data, stacking_label, test)
+    models, stacking_data, stacking_label, test = nfold_train(stacking_data, stacking_label, 5, ['l'], False, None, None, test)
     #models, stacking_data, stacking_label, test = nfold_train(train, train_label, 5, ['l', 'x'], True, None, None, test)
     #np.save('stacking_data_lx', stacking_data)
     #np.save('stacking_label_lx', stacking_label)
