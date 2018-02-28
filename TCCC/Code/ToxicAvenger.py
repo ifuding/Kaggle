@@ -15,11 +15,11 @@ coly = [c for c in train.columns if c not in ['id','comment_text']]
 y = train[coly]
 tid = test['id'].values
 
-# train['polarity'] = train['comment_text'].map(lambda x: int(TextBlob(x).sentiment.polarity * 10))
-# test['polarity'] = test['comment_text'].map(lambda x: int(TextBlob(x).sentiment.polarity * 10))
+train['polarity'] = train['comment_text'].map(lambda x: int(TextBlob(x).sentiment.polarity * 10))
+test['polarity'] = test['comment_text'].map(lambda x: int(TextBlob(x).sentiment.polarity * 10))
 
-# train['comment_text'] = train.apply(lambda r: str(r['comment_text']) + ' polarity' +  zsign[np.sign(r['polarity'])] + zpolarity[np.abs(r['polarity'])], axis=1)
-# test['comment_text'] = test.apply(lambda r: str(r['comment_text']) + ' polarity' +  zsign[np.sign(r['polarity'])] + zpolarity[np.abs(r['polarity'])], axis=1)
+train['comment_text'] = train.apply(lambda r: str(r['comment_text']) + ' polarity' +  zsign[np.sign(r['polarity'])] + zpolarity[np.abs(r['polarity'])], axis=1)
+test['comment_text'] = test.apply(lambda r: str(r['comment_text']) + ' polarity' +  zsign[np.sign(r['polarity'])] + zpolarity[np.abs(r['polarity'])], axis=1)
 
 df = pd.concat([train['comment_text'], test['comment_text']], axis=0)
 df = df.fillna("unknown")
@@ -27,7 +27,7 @@ nrow = train.shape[0]
 print("Train Size: {0}".format(nrow))
 print("Test Size: {0}".format(test.shape[0]))
 
-tfidf = feature_extraction.text.TfidfVectorizer(stop_words='english', ngram_range=(1, 2), max_features=80000)
+tfidf = feature_extraction.text.TfidfVectorizer(stop_words='english', ngram_range=(1, 2), max_features=800000)
 svd = decomposition.TruncatedSVD(n_components=50, n_iter=25, random_state=12)
 print("TFIDF------")
 data = tfidf.fit_transform(df)
@@ -37,7 +37,7 @@ np.save('svd.npy', data)
 
 model = ensemble.ExtraTreesClassifier(n_jobs=-1, random_state=3)
 print("Training------")
-model.fit(data[:nrow//4], y[:nrow//4])
+model.fit(data[:nrow], y[:nrow])
 print(1- model.score(data[:nrow], y[:nrow]))
 sub2 = model.predict_proba(data[nrow:])
 sub2 = pd.DataFrame([[c[1] for c in sub2[row]] for row in range(len(sub2))]).T
