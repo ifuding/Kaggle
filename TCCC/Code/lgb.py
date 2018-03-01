@@ -1,4 +1,5 @@
 import lightgbm as lgb
+import pandas as pd
 
 def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fold_seed,
         fold = 5, train_weight = None, valide_weight = None):
