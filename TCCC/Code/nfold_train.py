@@ -3,6 +3,7 @@ from lgb import lgbm_train
 import xgboost as xgb
 from functools import reduce
 import numpy as np
+from keras_train import keras_train
 
 def nfold_train(train_data, train_label, fold = 5, model_types = None,
             stacking = False, valide_data = None, valide_label = None,
@@ -43,8 +44,8 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
             if model_type == 'k':
                 pass
                 # with tf.device('/cpu:0'):
-                # model = keras_train(train_part, train_part_label, valide_part, valide_part_label, num_fold)
-                # onefold_models.append((model, 'k'))
+                model = keras_train(train_part, train_part_label, valide_part, valide_part_label, num_fold)
+                onefold_models.append((model, 'k'))
             elif model_type == 'x':
                 pass
                 # model = xgb_train(train_part, train_part_label, valide_part, valide_part_label, num_fold)
@@ -89,3 +90,14 @@ def model_eval(model, model_type, data_frame):
     elif model_type == 'x':
         preds = model.predict(xgb.DMatrix(data_frame), ntree_limit=model.best_ntree_limit)
     return preds.reshape((data_frame.shape[0], -1))
+
+def models_eval(models, data):
+    preds = None
+    for (model, model_type) in models:
+        pred = model_eval(model, model_type, data)
+        if preds is None:
+            preds = pred.copy()
+        else:
+            preds += pred
+    preds /= len(models)
+    return preds

@@ -14,15 +14,15 @@ def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fol
             'task': 'train',
             'boosting_type': 'gbdt', #'gbdt',
             'objective': 'binary',
-            'metric': {'auc'},
-            'num_leaves': 60, #60, #40, # 60,
+            'metric': {'auc', 'binary_logloss'},
+            'num_leaves': 40, #60, #40, # 60,
             'min_sum_hessian_in_leaf': 10,
-            'max_depth': 12,#12, #6, # 10,
-            'learning_rate': 0.015, # 0.025,
-           'feature_fraction': 0.35,#0.35, # 0.6
+            'max_depth': 10,#12, #6, # 10,
+            'learning_rate': 0.0125, # 0.025,
+            'feature_fraction': 0.35,#0.35, # 0.6
             'verbose': 0,
           #   'valid_sets': [d_valide],
-            'num_boost_round': 800, #361,
+            'num_boost_round': 1500, #361,
             'feature_fraction_seed': fold_seed,
             #'drop_rate': 0.05,
             'bagging_fraction': 0.8,
@@ -47,11 +47,11 @@ def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fol
     #print(pred[:10])
     #print(valide_part_label[:10])
     #print(valide_part[:10, -1])
-    #exit(0)
+    # exit(0)
     #feature_imp = bst.feature_importance(importance_type = 'gain')
     #print (feature_name[np.argsort(feature_imp)])
-    #exit(0)
-    cv_result = lgb.cv(params, d_train, nfold=fold) #, feval = gini_lgbm)
-    pd.DataFrame(cv_result).to_csv('cv_result', index = False)
-    exit(0)
+    # exit(0)
+    # cv_result = lgb.cv(params, d_train, nfold=fold) #, feval = gini_lgbm)
+    # pd.DataFrame(cv_result).to_csv('cv_result', index = False)
+    # exit(0)
     return bst
