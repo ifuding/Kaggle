@@ -35,9 +35,9 @@ EPSILON = 1e-7
 L2_NORM = 0
 R_RANK_GAMMA = 0.1
 R_RANK_P = 1
-HIDDEN_UNITS = [16, 8, 8]
+HIDDEN_UNITS = [16, 8, 4]
 DNN_EPOCHS = 40
-BATCH_SIZE = 200
+BATCH_SIZE = 128
 
 def dense_bn_layer(input_tensor, hn_num, name = None, dropout = True, bn = True):
     """
@@ -95,9 +95,9 @@ def res_net(input_shape, hns = [8, 6, 4, 4], classes = 2):
     """
     inputs = Input(shape=input_shape)
     x = BatchNormalization()(inputs)
-    x = identity_block(x, hns[0], name = 'block0', dropout = True)
-    x = identity_block(x, hns[1], name = 'block1', dropout = True)
-    x = identity_block(x, hns[2], name = 'block2', dropout = True)
+    x = identity_block(x, hns[0], name = 'block0', dropout = False)
+    x = identity_block(x, hns[1], name = 'block1', dropout = False)
+    x = identity_block(x, hns[2], name = 'block2', dropout = False)
     #x = identity_block(x, hns[3], name = 'block3', dropout = True)
     x = Dense(1, name = 'pre_sigmoid')(x)
     x = BatchNormalization()(x)
@@ -278,9 +278,9 @@ def create_embedding_layer():
 def create_dnn(input_shape, HIDDEN_UNITS = [16, 8, 4], DNN_BN = False, DROPOUT_RATE = 0):
     inputs = Input(input_shape)
     x = BatchNormalization()(inputs)
-    x = dense_bn_act_layer(x, HIDDEN_UNITS[0], name = 'hn0', dropout = True)
-    x = dense_bn_act_layer(x, HIDDEN_UNITS[1], name = 'hn1', dropout = True)
-    # x = dense_bn_act_layer(x, HIDDEN_UNITS[2], name = 'hn2', dropout = True)
+    x = dense_bn_act_layer(x, HIDDEN_UNITS[0], name = 'hn0', dropout = False)
+    x = dense_bn_act_layer(x, HIDDEN_UNITS[1], name = 'hn1', dropout = False)
+    # x = dense_bn_act_layer(x, HIDDEN_UNITS[2], name = 'hn2', dropout = False)
     x = Dense(1, name = 'pre_sigmoid')(x)
     proba = Activation('sigmoid')(x)
     model = Model(inputs, x)
@@ -314,6 +314,7 @@ def keras_train(train_part, train_part_label, valide_part, valide_part_label, fo
     print("-----Keras training-----")
 
     model = create_dnn((train_part.shape[1],), HIDDEN_UNITS)
+    # model = res_net((train_part.shape[1],), HIDDEN_UNITS)
     callbacks = [
             EarlyStopping(monitor='val_loss', patience=5, verbose=0),
             ]

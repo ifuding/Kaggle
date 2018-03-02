@@ -31,41 +31,26 @@ tid = test['id'].values
 df = pd.concat([train['comment_text'], test['comment_text']], axis=0)
 df = df.fillna("unknown")
 
-# class cust_txt_col(sklearn.base.BaseEstimator, sklearn.base.TransformerMixin):
-#    def __init__(self, key):
-#        self.key = key
-#    def fit(self, x, y=None):
-#        return self
-#    def transform(self, x):
-#        return x[self.key].apply(str)
-
 print('Pipeline...')
 fp = pipeline.Pipeline([
    ('union', pipeline.FeatureUnion(
        n_jobs = -1,
        transformer_list = [
            ('pi1', pipeline.Pipeline([('count_comment_text', \
-                feature_extraction.text.TfidfVectorizer(stop_words='english', analyzer=u'char', ngram_range=(2, 4), max_features=5000)), \
-                ('tsvd1', \
-                decomposition.TruncatedSVD(n_components=20, n_iter=1, random_state=12))])),
+                feature_extraction.text.TfidfVectorizer(stop_words='english', analyzer=u'char', ngram_range=(2, 8), max_features=50000)), \
+                ('tsvd1', decomposition.TruncatedSVD(n_components=128, n_iter=25, random_state=12))])
+                ),
            ('pi2', pipeline.Pipeline([('tfidf_Text', \
-                feature_extraction.text.TfidfVectorizer(stop_words='english', ngram_range=(1, 2), max_features=5000)), \
-                ('tsvd2', \
-                decomposition.TruncatedSVD(n_components=50, n_iter=25, random_state=12))]))
+                feature_extraction.text.TfidfVectorizer(stop_words='english', ngram_range=(1, 3), max_features=50000)), \
+                ('tsvd2', decomposition.TruncatedSVD(n_components=128, n_iter=25, random_state=12))])
+                )
        ])
    )])
 
 data = fp.fit_transform(df)
-# exit(0)
-# tfidf = feature_extraction.text.TfidfVectorizer(stop_words='english', ngram_range=(1, 2), max_features=800000)
-# svd = decomposition.TruncatedSVD(n_components=50, n_iter=25, random_state=12)
-# print("TFIDF------")
-# data = tfidf.fit_transform(df)
-# print("SVD------")
-# data = svd.fit_transform(data)
 svd_name = "svd" + strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) + ".npy"
 np.save(svd_name, data)
-# data = np.load('svd.npy')
+# data = np.load('svd_2018_03_01_20_11_15.npy')
 train_data, train_label = data[:nrow], y
 test_data = data[nrow:]
 
@@ -104,4 +89,5 @@ for c in coly:
     blend[c] = np.sqrt(blend[c] * blend[c+'_'])
     blend[c] = blend[c].clip(0+1e12, 1-1e12) '''
 blend = sub2 #blend[sub2.columns]
-blend.to_csv('submission.csv', index=False)
+sub_name = "sub" + strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) + ".csv"
+blend.to_csv(sub_name, index=False)

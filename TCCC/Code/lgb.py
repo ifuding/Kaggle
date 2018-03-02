@@ -28,7 +28,7 @@ def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fol
             'bagging_fraction': 0.8,
             'bagging_freq': 20,
             'bagging_seed': fold_seed,
-            #'early_stopping_round': 50,
+            'early_stopping_round': 150,
             # 'random_state': 10
             # 'verbose_eval': 20
             #'min_data_in_leaf': 665
