@@ -5,6 +5,7 @@ from sklearn import feature_extraction, ensemble, decomposition, pipeline
 from textblob import TextBlob
 from nfold_train import nfold_train, models_eval
 from time import gmtime, strftime
+from RCNN_Keras import get_word2vec
 
 zpolarity = {0:'zero',1:'one',2:'two',3:'three',4:'four',5:'five',6:'six',7:'seven',8:'eight',9:'nine',10:'ten'}
 zsign = {-1:'negative',  0.: 'neutral', 1:'positive'}
@@ -31,42 +32,49 @@ tid = test['id'].values
 df = pd.concat([train['comment_text'], test['comment_text']], axis=0)
 df = df.fillna("unknown")
 
-print('Pipeline...')
-fp = pipeline.Pipeline([
-   ('union', pipeline.FeatureUnion(
-       n_jobs = -1,
-       transformer_list = [
-           ('pi1', pipeline.Pipeline([('count_comment_text', \
-                feature_extraction.text.TfidfVectorizer(stop_words='english', analyzer=u'char', ngram_range=(2, 8), max_features=50000)), \
-                ('tsvd1', decomposition.TruncatedSVD(n_components=128, n_iter=25, random_state=12))])
-                ),
-           ('pi2', pipeline.Pipeline([('tfidf_Text', \
-                feature_extraction.text.TfidfVectorizer(stop_words='english', ngram_range=(1, 3), max_features=50000)), \
-                ('tsvd2', decomposition.TruncatedSVD(n_components=128, n_iter=25, random_state=12))])
-                )
-       ])
-   )])
+print('Word2Vec...')
+get_word2vec(df)
+# exit(0)
 
-data = fp.fit_transform(df)
-svd_name = "svd" + strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) + ".npy"
-np.save(svd_name, data)
-# data = np.load('svd_2018_03_01_20_11_15.npy')
+# print('Pipeline...')
+# fp = pipeline.Pipeline([
+#    ('union', pipeline.FeatureUnion(
+#        n_jobs = -1,
+#        transformer_list = [
+#            ('pi1', pipeline.Pipeline([('count_comment_text', \
+#                 feature_extraction.text.TfidfVectorizer(stop_words='english', analyzer=u'char', ngram_range=(2, 8), max_features=50000)), \
+#                 ('tsvd1', decomposition.TruncatedSVD(n_components=128, n_iter=25, random_state=12))])
+#                 ),
+#            ('pi2', pipeline.Pipeline([('tfidf_Text', \
+#                 feature_extraction.text.TfidfVectorizer(stop_words='english', ngram_range=(1, 3), max_features=50000)), \
+#                 ('tsvd2', decomposition.TruncatedSVD(n_components=128, n_iter=25, random_state=12))])
+#                 )
+#        ])
+#    )])
+
+# data = fp.fit_transform(df)
+# svd_name = "svd" + strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) + ".npy"
+# np.save(svd_name, data)
+data = np.load('svd_2018_03_01_16_33_00.npy')
+# data = df.values
 train_data, train_label = data[:nrow], y
 test_data = data[nrow:]
 
 print("Training------")
 multi_label_models = []
 sub2 = pd.DataFrame(np.zeros((test.shape[0], len(coly))), columns = coly)
-for c in coly:
-    print("------Label: {0}".format(c))
-    label = train_label[c].values
-    models, _, _, _ = nfold_train(train_data, label, fold = 5, model_types = 'l') #, valide_label = train_label)
-    multi_label_models.append(models)
-    sub2[c] = models_eval(models, test_data)
+models, _, _, _ = nfold_train(train_data, train_label.values, fold = 5, model_types = ['k'])
+# exit(0)
+# for c in coly:
+#     print("------Label: {0}".format(c))
+#     label = train_label[c].values
+#     models, _, _, _ = nfold_train(train_data, label, fold = 5, model_types = ['k']) #, valide_label = train_label)
+#     multi_label_models.append(models)
+#     sub2[c] = models_eval(models, test_data)
 #model = ensemble.ExtraTreesClassifier(n_jobs=-1, random_state=3)
 #model.fit(data[:nrow], y[:nrow])
 # print(1- model.score(data[:nrow], y[:nrow]))
-# sub2 = model.predict_proba(data[nrow:])
+sub2[coly] = models_eval(models, test_data)
 # sub2 = pd.DataFrame([[c[1] for c in sub2[row]] for row in range(len(sub2))]).T
 # sub2.columns = coly
 sub2['id'] = tid

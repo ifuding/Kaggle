@@ -4,6 +4,19 @@ import xgboost as xgb
 from functools import reduce
 import numpy as np
 from keras_train import keras_train
+import gensim
+from RCNN_Keras import get_word2vec, RCNN_Model
+
+# RNN_PARAMS
+MAX_NUM_WORDS = 10000
+RNN_EMBEDDING_DIM = 16
+MAX_SEQUENCE_LEN = 10
+LSTM_UNIT = 16
+RCNN_HIDDEN_UNIT = 8
+
+## DNN Param
+DNN_EPOCHS = 1
+BATCH_SIZE = 128
 
 def nfold_train(train_data, train_label, fold = 5, model_types = None,
             stacking = False, valide_data = None, valide_label = None,
@@ -15,6 +28,7 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
     print(train_data.shape)
 
     kf = KFold(n_splits=fold, shuffle=False)
+    wv_model = gensim.models.Word2Vec.load("wv_model_norm.gensim")
 
     stacking_data = None
     stacking_label = None
@@ -54,6 +68,13 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
                 model = lgbm_train(train_part, train_part_label, valide_part, valide_part_label, num_fold,
                         fold)
                 onefold_models.append((model, 'l'))
+            elif model_type == 'rcnn':
+                # model = Create_RCNN(MAX_NUM_WORDS, RNN_EMBEDDING_DIM, 2, LSTM_UNIT, RCNN_HIDDEN_UNIT, wv_model)
+                model = RCNN_Model(wv_model_file = 'wv_model_norm.gensim', num_classes = 2, context_vector_dim = LSTM_UNIT, \
+                        hidden_dim = RCNN_HIDDEN_UNIT, max_len = MAX_SEQUENCE_LEN)
+                model.train(train_part, train_part_label, valide_part, valide_part_label)
+                print(model.model.summary())
+                onefold_models.append((model, 'rcnn'))
         if stacking:
             valide_pred = [model_eval(model[0], model[1], valide_part) for model in onefold_models]
             valide_pred = reduce((lambda x, y: np.c_[x, y]), valide_pred)
@@ -83,13 +104,12 @@ def model_eval(model, model_type, data_frame):
     if model_type == 'l':
         preds = model.predict(data_frame)
     elif model_type == 'k' or model_type == 'LR' or model_type == 'DNN' or model_type == 'RCNN':
-        pass
-        # preds = model.predict(data_frame, batch_size=BATCH_SIZE, verbose=2)
+        preds = model.predict(data_frame, batch_size=BATCH_SIZE, verbose = 2)
     elif model_type == 't':
         print("ToDO")
     elif model_type == 'x':
         preds = model.predict(xgb.DMatrix(data_frame), ntree_limit=model.best_ntree_limit)
-    return preds.reshape((data_frame.shape[0], -1))
+    return preds #.reshape((data_frame.shape[0], -1))
 
 def models_eval(models, data):
     preds = None

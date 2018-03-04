@@ -21,7 +21,7 @@ from keras.layers.embeddings import Embedding
 from keras.layers import Input, concatenate, merge, LSTM, Lambda, Add, Activation, Subtract
 from keras.layers.convolutional import Convolution2D, MaxPooling2D, ZeroPadding2D, AveragePooling2D
 from keras.optimizers import SGD, RMSprop, Adam, Nadam
-from keras.callbacks import EarlyStopping
+from keras.callbacks import EarlyStopping, Callback
 from keras.utils import np_utils
 from keras import backend as K
 from keras.regularizers import l1, l2
@@ -30,14 +30,28 @@ from keras import __version__ as keras_version
 
 
 RANK_SCALE = 1
-DROPOUT_RATE = 0.8 #0.35
+DROPOUT_RATE = 0.5 #0.35
 EPSILON = 1e-7
 L2_NORM = 0
 R_RANK_GAMMA = 0.1
 R_RANK_P = 1
-HIDDEN_UNITS = [16, 8, 4]
+HIDDEN_UNITS = [200, 150, 100]
 DNN_EPOCHS = 40
-BATCH_SIZE = 128
+BATCH_SIZE = 64
+
+class RocAucEvaluation(Callback):
+    def __init__(self, validation_data=(), interval=1):
+        super(Callback, self).__init__()
+
+        self.interval = interval
+        self.X_val, self.y_val = validation_data
+
+    def on_epoch_end(self, epoch, logs={}):
+        if epoch % self.interval == 0:
+            y_pred = self.model.predict(self.X_val, verbose=0)
+            score = metrics.roc_auc_score(self.y_val, y_pred)
+            print("\n ROC-AUC - epoch: %d - score: %.6f \n" % (epoch+1, score))
+
 
 def dense_bn_layer(input_tensor, hn_num, name = None, dropout = True, bn = True):
     """
@@ -278,13 +292,13 @@ def create_embedding_layer():
 def create_dnn(input_shape, HIDDEN_UNITS = [16, 8, 4], DNN_BN = False, DROPOUT_RATE = 0):
     inputs = Input(input_shape)
     x = BatchNormalization()(inputs)
-    x = dense_bn_act_layer(x, HIDDEN_UNITS[0], name = 'hn0', dropout = False)
-    x = dense_bn_act_layer(x, HIDDEN_UNITS[1], name = 'hn1', dropout = False)
-    # x = dense_bn_act_layer(x, HIDDEN_UNITS[2], name = 'hn2', dropout = False)
-    x = Dense(1, name = 'pre_sigmoid')(x)
+    x = dense_bn_act_layer(x, HIDDEN_UNITS[0], name = 'hn0', dropout = True)
+    x = dense_bn_act_layer(x, HIDDEN_UNITS[1], name = 'hn1', dropout = True)
+    x = dense_bn_act_layer(x, HIDDEN_UNITS[2], name = 'hn2', dropout = True)
+    x = Dense(6, name = 'pre_sigmoid')(x)
     proba = Activation('sigmoid')(x)
-    model = Model(inputs, x)
-    model.compile(optimizer=Nadam(), loss='binary_crossentropy')
+    model = Model(inputs, proba)
+    model.compile(optimizer=Adam(), loss='binary_crossentropy')
 
     return model
 
@@ -317,6 +331,7 @@ def keras_train(train_part, train_part_label, valide_part, valide_part_label, fo
     # model = res_net((train_part.shape[1],), HIDDEN_UNITS)
     callbacks = [
             EarlyStopping(monitor='val_loss', patience=5, verbose=0),
+            RocAucEvaluation(validation_data=(valide_part, valide_part_label), interval=1)
             ]
 
     model.fit(train_part, train_part_label, batch_size=BATCH_SIZE, epochs=DNN_EPOCHS,
