@@ -6,13 +6,14 @@ import numpy as np
 from keras_train import keras_train
 import gensim
 from RCNN_Keras import get_word2vec, RCNN_Model
+from RNN_Keras import RNN_Model
 
 # RNN_PARAMS
-MAX_NUM_WORDS = 10000
-RNN_EMBEDDING_DIM = 16
-MAX_SEQUENCE_LEN = 10
-LSTM_UNIT = 16
-RCNN_HIDDEN_UNIT = 8
+MAX_NUM_WORDS = 50000
+RNN_EMBEDDING_DIM = 256
+MAX_SEQUENCE_LEN = 100
+LSTM_UNIT = 128
+RCNN_HIDDEN_UNIT = 64
 
 ## DNN Param
 DNN_EPOCHS = 1
@@ -75,6 +76,12 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
                 model.train(train_part, train_part_label, valide_part, valide_part_label)
                 print(model.model.summary())
                 onefold_models.append((model, 'rcnn'))
+            elif model_type == 'rnn':
+                model = RNN_Model(max_token = MAX_NUM_WORDS, num_classes = 2, context_vector_dim = LSTM_UNIT, \
+                        hidden_dim = RCNN_HIDDEN_UNIT, max_len = MAX_SEQUENCE_LEN, embedding_dim = RNN_EMBEDDING_DIM)
+                model.train(train_part, train_part_label, valide_part, valide_part_label)
+                print(model.model.summary())
+                onefold_models.append((model, 'rnn'))
         if stacking:
             valide_pred = [model_eval(model[0], model[1], valide_part) for model in onefold_models]
             valide_pred = reduce((lambda x, y: np.c_[x, y]), valide_pred)
@@ -92,6 +99,7 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
             print('stacking_label shape: {0}'.format(stacking_label.shape))
         models.append(onefold_models[0])
         num_fold += 1
+        break
     if stacking:
         test_preds /= fold
         test_data = np.c_[test_data, test_preds]
@@ -103,7 +111,7 @@ def model_eval(model, model_type, data_frame):
     """
     if model_type == 'l':
         preds = model.predict(data_frame)
-    elif model_type == 'k' or model_type == 'LR' or model_type == 'DNN' or model_type == 'RCNN':
+    elif model_type == 'k' or model_type == 'LR' or model_type == 'DNN' or model_type == 'rcnn' or model_type == 'rnn':
         preds = model.predict(data_frame, batch_size=BATCH_SIZE, verbose = 2)
     elif model_type == 't':
         print("ToDO")

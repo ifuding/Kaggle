@@ -22,7 +22,7 @@ from keras_train import RocAucEvaluation
 
 ## DNN Param
 DNN_EPOCHS = 1
-BATCH_SIZE = 128
+BATCH_SIZE = 64
 
 class MySentences(object):
     def __init__(self, corpus):
