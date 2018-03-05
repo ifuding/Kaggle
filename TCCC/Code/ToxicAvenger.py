@@ -67,7 +67,7 @@ tokenizer.fit_on_texts(data)
 data = tokenizer.texts_to_sequences(data)
 data = pad_sequences(data, maxlen = 100)
 svd_name = "token_sequence" + strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) + ".npy"
-np.save(svd_name, data)
+# np.save(svd_name, data)
 # data = np.load('token_sequence_2018_03_04_15_50_25.npy')
 
 train_data, train_label = data[:nrow], y

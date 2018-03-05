@@ -11,7 +11,8 @@ import os
 
 from keras import backend
 from keras.layers import Dense, Input, Lambda, LSTM, TimeDistributed, SimpleRNN, \
-        GRU, Bidirectional, GlobalAveragePooling1D, GlobalMaxPooling1D
+        GRU, Bidirectional, GlobalAveragePooling1D, GlobalMaxPooling1D, Activation, \
+        SpatialDropout1D
 from keras.layers.merge import concatenate
 from keras.layers.embeddings import Embedding
 from keras.models import Model
@@ -22,7 +23,7 @@ from keras_train import RocAucEvaluation
 
 
 ## DNN Param
-DNN_EPOCHS = 2
+DNN_EPOCHS = 4
 BATCH_SIZE = 64
 
 class MySentences(object):
@@ -67,6 +68,14 @@ class RNN_Model:
         self.max_len = max_len
         self.model = None
 
+
+    def act_blend(self, linear_input):
+        full_conv_relu = Activation('relu')(linear_input)
+        full_conv_sigmoid = Activation('sigmoid')(linear_input)
+        full_conv = concatenate([full_conv_relu, full_conv_sigmoid], axis = 1)
+        return full_conv
+
+
     def Create_RNN(self):
         """
         """
@@ -77,8 +86,13 @@ class RNN_Model:
         avg_pool = GlobalAveragePooling1D()(x)
         max_pool = GlobalMaxPooling1D()(x)
         conc = concatenate([avg_pool, max_pool])
-        full_conv = Dense(self.hidden_dim, activation="relu")(conc)
-        outp = Dense(6, activation="sigmoid")(full_conv)
+
+        # full_conv_pre_act_0 = Dense(self.hidden_dim[0])(conc)
+        # full_conv_0 = self.act_blend(full_conv_pre_act_0)
+        # full_conv_pre_act_1 = Dense(self.hidden_dim[1])(full_conv_0)
+        # full_conv_1 = self.act_blend(full_conv_pre_act_1)
+
+        outp = Dense(6, activation="sigmoid")(conc)
 
         model = Model(inputs = inp, outputs = outp)
         print (model.summary())
@@ -107,7 +121,7 @@ class RNN_Model:
         return model
 
 
-    def predict(self, model, test_part, batch_size=BATCH_SIZE, verbose=2):
+    def predict(self, test_part, batch_size=BATCH_SIZE, verbose=2):
         """
         Keras Training
         """

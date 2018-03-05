@@ -13,7 +13,7 @@ MAX_NUM_WORDS = 50000
 RNN_EMBEDDING_DIM = 256
 MAX_SEQUENCE_LEN = 100
 LSTM_UNIT = 128
-RCNN_HIDDEN_UNIT = 64
+RCNN_HIDDEN_UNIT = [64, 32]
 
 ## DNN Param
 DNN_EPOCHS = 1
@@ -80,7 +80,7 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
                 model = RNN_Model(max_token = MAX_NUM_WORDS, num_classes = 2, context_vector_dim = LSTM_UNIT, \
                         hidden_dim = RCNN_HIDDEN_UNIT, max_len = MAX_SEQUENCE_LEN, embedding_dim = RNN_EMBEDDING_DIM)
                 model.train(train_part, train_part_label, valide_part, valide_part_label)
-                print(model.model.summary())
+                # print(model.model.summary())
                 onefold_models.append((model, 'rnn'))
         if stacking:
             valide_pred = [model_eval(model[0], model[1], valide_part) for model in onefold_models]
@@ -99,7 +99,8 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
             print('stacking_label shape: {0}'.format(stacking_label.shape))
         models.append(onefold_models[0])
         num_fold += 1
-        break
+        if num_fold == 1:
+            break
     if stacking:
         test_preds /= fold
         test_data = np.c_[test_data, test_preds]
