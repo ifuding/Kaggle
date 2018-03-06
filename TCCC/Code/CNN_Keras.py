@@ -12,7 +12,7 @@ import os
 from keras import backend
 from keras.layers import Dense, Input, Lambda, LSTM, TimeDistributed, SimpleRNN, \
         GRU, Bidirectional, GlobalAveragePooling1D, GlobalMaxPooling1D, Activation, \
-        SpatialDropout1D
+        SpatialDropout1D, Conv2D, Conv1D
 from keras.layers.merge import concatenate
 from keras.layers.embeddings import Embedding
 from keras.models import Model
@@ -24,7 +24,7 @@ from keras_train import RocAucEvaluation
 
 ## DNN Param
 DNN_EPOCHS = 3
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 
 class MySentences(object):
     def __init__(self, corpus):
@@ -37,7 +37,7 @@ class MySentences(object):
             yield text.split()
 
 
-def get_word2vec(corpus, location = 'wv_model_norm.gensim'):
+def get_word2vec_embedding(location = 'wv_model_norm.gensim', tokenizer = None, nb_words = 10000, embed_size = 300):
     """Returns trained word2vec
 
     Args:
@@ -45,27 +45,32 @@ def get_word2vec(corpus, location = 'wv_model_norm.gensim'):
 
         location (str): Path to save/load word2vec
     """
-    if os.path.exists(location):
+    if not os.path.exists(location):
         print('Found {}'.format(location))
-        model = gensim.models.Word2Vec.load(location)
-        return model
+        return None
+    print("-----Load Word2Vec Model-----")
+    wv_model = gensim.models.KeyedVectors.load_word2vec_format(location, binary=True)
+    word_index = tokenizer.word_index
+    embedding_matrix = np.zeros((nb_words, embed_size))
+    for word, i in word_index.items():
+        if i >= nb_words: continue
+        if word in wv_model:
+            embedding_matrix[i] = wv_model[word]
 
-    print('{} not found. training model'.format(location))
-    model = gensim.models.Word2Vec(sentences = MySentences(corpus), size=32, window=5, min_count=5, workers=8)
-    print('Model done training. Saving to disk')
-    model.save(location)
-    return model
+    return embedding_matrix
 
-class RNN_Model:
+
+class CNN_Model:
     """
     """
-    def __init__(self, max_token, num_classes, context_vector_dim, hidden_dim, max_len, embedding_dim):
+    def __init__(self, max_token, num_classes, context_vector_dim, hidden_dim, max_len, embedding_dim, tokenizer):
         self.num_classes = num_classes
         self.context_vector_dim = context_vector_dim
         self.hidden_dim = hidden_dim
         self.max_token = max_token
         self.embedding_dim = embedding_dim
         self.max_len = max_len
+        self.tokenizer = tokenizer
         self.model = None
 
 
@@ -76,17 +81,41 @@ class RNN_Model:
         return full_conv
 
 
-    def Create_RNN(self):
+    def pooling_blend(self, input):
+        avg_pool = GlobalAveragePooling1D()(input)
+        max_pool = GlobalMaxPooling1D()(input)
+        conc = concatenate([avg_pool, max_pool])
+        return conc
+
+
+    def Create_CNN(self):
         """
         """
         inp = Input(shape=(self.max_len, ))
-        x = Embedding(self.max_token, self.embedding_dim)(inp)
-        # x = SpatialDropout1D(0.2)(x)
-        # x = Bidirectional(GRU(self.context_vector_dim, return_sequences=True))(x)
-        avg_pool = GlobalAveragePooling1D()(x)
-        max_pool = GlobalMaxPooling1D()(x)
-        conc = concatenate([avg_pool, max_pool])
+        embedding_weight = get_word2vec_embedding(location = '../Data/GoogleNews-vectors-negative300.bin', \
+                                tokenizer = self.tokenizer, nb_words = self.max_token, embed_size = self.embedding_dim)
+        x = Embedding(self.max_token, self.embedding_dim, weights=[embedding_weight], trainable=False)(inp)
+        x = SpatialDropout1D(0.2)(x)
 
+        kernel1_maps = Conv1D(filters = 50, kernel_size = 1, activation = 'linear')(x)
+        kernel1_maps_act = self.act_blend(kernel1_maps)
+        kernel1_conc = self.pooling_blend(kernel1_maps_act)
+
+        kernel2_maps = Conv1D(filters = 50, kernel_size = 2, activation = 'linear')(x)
+        kernel2_maps_act = self.act_blend(kernel2_maps)
+        kernel2_conc = self.pooling_blend(kernel2_maps_act)
+
+        kernel3_maps = Conv1D(filters = 50, kernel_size = 3, activation = 'linear')(x)
+        kernel3_maps_act = self.act_blend(kernel3_maps)
+        kernel3_conc = self.pooling_blend(kernel3_maps_act)
+
+        kernel4_maps = Conv1D(filters = 50, kernel_size = 4, activation = 'linear')(x)
+        kernel4_maps_act = self.act_blend(kernel4_maps)
+        kernel4_conc = self.pooling_blend(kernel4_maps_act)
+
+        conc = concatenate([kernel1_conc, kernel2_conc, kernel3_conc, kernel4_conc])
+
+        # conc = self.pooling_blend(x)
         # full_conv_pre_act_0 = Dense(self.hidden_dim[0])(conc)
         # full_conv_0 = self.act_blend(full_conv_pre_act_0)
         # full_conv_pre_act_1 = Dense(self.hidden_dim[1])(full_conv_0)
@@ -104,9 +133,9 @@ class RNN_Model:
         """
         Keras Training
         """
-        print("-----RNN training-----")
+        print("-----CNN training-----")
 
-        model = self.Create_RNN()
+        model = self.Create_CNN()
 
         callbacks = [
                 EarlyStopping(monitor='val_loss', patience=3, verbose=0),
