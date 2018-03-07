@@ -9,8 +9,8 @@ from RCNN_Keras import get_word2vec
 from keras.preprocessing.text import Tokenizer, text_to_word_sequence
 from keras.preprocessing.sequence import pad_sequences
 
-MAX_NUM_WORDS = 1000
-MAX_SEQUENCE_LEN = 10
+MAX_NUM_WORDS = 50000
+MAX_SEQUENCE_LEN = 100
 
 zpolarity = {0:'zero',1:'one',2:'two',3:'three',4:'four',5:'five',6:'six',7:'seven',8:'eight',9:'nine',10:'ten'}
 zsign = {-1:'negative',  0.: 'neutral', 1:'positive'}
@@ -73,14 +73,14 @@ svd_name = "token_sequence" + strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) + ".npy"
 # np.save(svd_name, data)
 # data = np.load('token_sequence_2018_03_04_15_50_25.npy')
 
-train_data, train_label = data[:nrow], y
+train_data, train_label = data[:nrow], y.values
 test_data = data[nrow:]
 
 print("Training------")
 multi_label_models = []
 sub2 = pd.DataFrame(np.zeros((test.shape[0], len(coly))), columns = coly)
-models, _, _, _ = nfold_train(train_data, train_label.values, fold = 10, model_types = ['cnn'], \
-                    tokenizer = tokenizer, num_words = MAX_NUM_WORDS)
+models, _, _, _ = nfold_train(train_data, train_label, fold = 10, model_types = ['cnn'], \
+                    tokenizer = tokenizer, num_words = MAX_NUM_WORDS, valide_data = train_data, valide_label = train_label)
 # exit(0)
 # for c in coly:
 #     print("------Label: {0}".format(c))
