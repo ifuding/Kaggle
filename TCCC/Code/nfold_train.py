@@ -10,7 +10,7 @@ from RNN_Keras import RNN_Model
 from CNN_Keras import CNN_Model
 
 # RNN_PARAMS
-MAX_NUM_WORDS = 50000
+MAX_NUM_WORDS = 100000
 RNN_EMBEDDING_DIM = 300
 MAX_SEQUENCE_LEN = 100
 LSTM_UNIT = 128
@@ -31,7 +31,7 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
     print(train_data.shape)
 
     kf = KFold(n_splits=fold, shuffle=False)
-    wv_model = gensim.models.Word2Vec.load("wv_model_norm.gensim")
+    # wv_model = gensim.models.Word2Vec.load("wv_model_norm.gensim")
 
     stacking_data = None
     stacking_label = None
