@@ -12,7 +12,7 @@ import os
 from keras import backend
 from keras.layers import Dense, Input, Lambda, LSTM, TimeDistributed, SimpleRNN, \
         GRU, Bidirectional, GlobalAveragePooling1D, GlobalMaxPooling1D, Activation, \
-        SpatialDropout1D, Conv2D, Conv1D
+        SpatialDropout1D, Conv2D, Conv1D, Reshape, Flatten
 from keras.layers.merge import concatenate
 from keras.layers.embeddings import Embedding
 from keras.models import Model
@@ -25,6 +25,10 @@ from keras_train import RocAucEvaluation
 ## DNN Param
 DNN_EPOCHS = 3
 BATCH_SIZE = 32
+
+K = backend.backend()
+if K=='tensorflow':
+    backend.set_image_dim_ordering('tf')
 
 class MySentences(object):
     def __init__(self, corpus):
@@ -71,7 +75,10 @@ class CNN_Model:
         self.embedding_dim = embedding_dim
         self.max_len = max_len
         self.tokenizer = tokenizer
-        self.model = None
+        #self.embedding_weight = get_word2vec_embedding(location = '../Data/GoogleNews-vectors-negative300.bin', \
+        #    tokenizer = self.tokenizer, nb_words = self.max_token, embed_size = self.embedding_dim)
+        self.filter_size = 2
+        self.model = self.Create_2DCNN()
 
 
     def act_blend(self, linear_input):
@@ -87,14 +94,19 @@ class CNN_Model:
         conc = concatenate([avg_pool, max_pool])
         return conc
 
+    def pooling2d_blend(self, input):
+        avg_pool = AveragePooling2D()(input)
+        max_pool = MaxPooling2D()(input)
+        conc = concatenate([avg_pool, max_pool])
+        return conc
+
 
     def Create_CNN(self):
         """
         """
         inp = Input(shape=(self.max_len, ))
-        embedding_weight = get_word2vec_embedding(location = '../Data/GoogleNews-vectors-negative300.bin', \
-                                tokenizer = self.tokenizer, nb_words = self.max_token, embed_size = self.embedding_dim)
-        x = Embedding(self.max_token, self.embedding_dim, weights=[embedding_weight], trainable=False)(inp)
+        embedding = Embedding(self.max_token, self.embedding_dim, weights=[self.embedding_weight] , trainable=False)
+        x = embedding(inp)
         x = SpatialDropout1D(0.2)(x)
 
         kernel1_maps = Conv1D(filters = 50, kernel_size = 1, activation = 'linear')(x)
@@ -129,32 +141,76 @@ class CNN_Model:
         return model
 
 
+    def Create_2DCNN(self):
+        """
+        """
+        inp = Input(shape=(self.max_len, ))
+        fixed_embedding = Embedding(self.max_token, self.embedding_dim) #, weights=[self.embedding_weight] , trainable=False)
+        retrain_embedding = Embedding(self.max_token, self.embedding_dim) #, weights=[self.embedding_weight] , trainable=True)
+        fixed_x = fixed_embedding(inp)
+        retrain_x = retrain_embedding(inp)
+        x = Lambda(lambda x: backend.stack([x[0], x[1]], axis = 1))([fixed_x, retrain_x])
+        # x = SpatialDropout1D(0.2)(x)
+
+        kernel1_maps = Conv2D(filters = self.filter_size, kernel_size = 1, activation = 'linear', \
+                    data_format = 'channels_first', input_shape = (2, self.max_token, self.embedding_dim))(x)
+        # kernel1_maps = Reshape((-1, self.filter_size, self.max_len))(kernel1_maps)
+        # kernel1_maps_act = self.act_blend(kernel1_maps)
+        kernel1_conc = self.pooling2d_blend(kernel1_maps)
+
+        # kernel2_maps = Conv1D(filters = 50, kernel_size = 2, activation = 'linear')(x)
+        # kernel2_maps_act = self.act_blend(kernel2_maps)
+        # kernel2_conc = self.pooling_blend(kernel2_maps_act)
+
+        # kernel3_maps = Conv1D(filters = 50, kernel_size = 3, activation = 'linear')(x)
+        # kernel3_maps_act = self.act_blend(kernel3_maps)
+        # kernel3_conc = self.pooling_blend(kernel3_maps_act)
+
+        # kernel4_maps = Conv1D(filters = 50, kernel_size = 4, activation = 'linear')(x)
+        # kernel4_maps_act = self.act_blend(kernel4_maps)
+        # kernel4_conc = self.pooling_blend(kernel4_maps_act)
+
+        # conc = concatenate([kernel1_conc, kernel2_conc, kernel3_conc, kernel4_conc])
+
+        # conc = self.pooling_blend(x)
+        # full_conv_pre_act_0 = Dense(self.hidden_dim[0])(conc)
+        # full_conv_0 = self.act_blend(full_conv_pre_act_0)
+        # full_conv_pre_act_1 = Dense(self.hidden_dim[1])(full_conv_0)
+        # full_conv_1 = self.act_blend(full_conv_pre_act_1)
+        flat = Flatten()(kernel1_conc)
+        outp = Dense(6, activation="sigmoid")(kernel1_conc)
+
+        model = Model(inputs = inp, outputs = outp)
+        print (model.summary())
+        model.compile(optimizer = "adam", loss = "binary_crossentropy", metrics = ["accuracy"])
+        return model
+
+
     def train(self, train_part, train_part_label, valide_part, valide_part_label):
         """
         Keras Training
         """
         print("-----CNN training-----")
 
-        model = self.Create_CNN()
+        # model = self.Create_2DCNN()
 
         callbacks = [
                 EarlyStopping(monitor='val_loss', patience=3, verbose=0),
                 RocAucEvaluation(validation_data=(valide_part, valide_part_label), interval=1)
                 ]
 
-        model.fit(train_part, train_part_label, batch_size=BATCH_SIZE, epochs=DNN_EPOCHS,
+        self.model.fit(train_part, train_part_label, batch_size=BATCH_SIZE, epochs=DNN_EPOCHS,
                     shuffle=True, verbose=2,
                     validation_data=(valide_part, valide_part_label)
                     , callbacks=callbacks)
-        self.model = model
-        return model
+        return self.model
 
 
     def predict(self, test_part, batch_size=BATCH_SIZE, verbose=2):
         """
         Keras Training
         """
-        print("-----RNN Test-----")
+        print("-----CNN Test-----")
         pred = self.model.predict(test_part, batch_size=1024, verbose=verbose)
         return pred
 
