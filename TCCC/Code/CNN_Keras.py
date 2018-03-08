@@ -23,8 +23,8 @@ from keras_train import RocAucEvaluation
 
 
 ## DNN Param
-DNN_EPOCHS = 3
-BATCH_SIZE = 128
+DNN_EPOCHS = 10
+BATCH_SIZE = 32
 
 class MySentences(object):
     def __init__(self, corpus):
@@ -73,7 +73,7 @@ class CNN_Model:
         self.tokenizer = tokenizer
         self.embedding_weight = get_word2vec_embedding(location = '../Data/GoogleNews-vectors-negative300.bin', \
             tokenizer = self.tokenizer, nb_words = self.max_token, embed_size = self.embedding_dim)
-        self.filter_size = 32
+        self.filter_size = 100
         self.model = self.Create_CNN()
 
 
@@ -90,9 +90,11 @@ class CNN_Model:
         conc = concatenate([avg_pool, max_pool])
         return conc
 
-    def pooling2d_blend(self, input, pool_size = (2, 2)):
-        avg_pool = AveragePooling2D(data_format = 'channels_last', pool_size = pool_size)(input)
-        max_pool = MaxPooling2D(data_format = 'channels_last', pool_size = pool_size)(input)
+    def pooling2d_blend(self, input, pool_size = (2, 2), strides = None, padding='valid'):
+        avg_pool = AveragePooling2D(data_format = 'channels_last', pool_size = pool_size, \
+                    strides = strides, padding = padding)(input)
+        max_pool = MaxPooling2D(data_format = 'channels_last', pool_size = pool_size, \
+                    strides = strides, padding = padding)(input)
         conc = concatenate([avg_pool, max_pool])
         return conc
 
@@ -103,27 +105,28 @@ class CNN_Model:
         inp = Input(shape=(self.max_len, ))
         embedding = Embedding(self.max_token, self.embedding_dim, weights=[self.embedding_weight] , trainable=False)
         x = embedding(inp)
-        x = Bidirectional(GRU(self.context_vector_dim, return_sequences=True))(x)
+        # x = SpatialDropout1D(0.2)(x)
+        # x = Bidirectional(GRU(self.context_vector_dim, return_sequences=True))(x)
         # x = Reshape(())
         # x = SpatialDropout1D(0.2)(x)
 
-        # kernel1_maps = Conv1D(filters = 50, kernel_size = 1, activation = 'linear')(x)
-        # kernel1_maps_act = self.act_blend(kernel1_maps)
-        kernel1_conc = self.pooling_blend(x)
+        kernel1_maps = Conv1D(filters = self.filter_size, kernel_size = 1, activation = 'linear')(x)
+        kernel1_maps_act = self.act_blend(kernel1_maps)
+        kernel1_conc = self.pooling_blend(kernel1_maps_act)
 
-        # kernel2_maps = Conv1D(filters = 50, kernel_size = 2, activation = 'linear')(x)
-        # kernel2_maps_act = self.act_blend(kernel2_maps)
-        # kernel2_conc = self.pooling_blend(kernel2_maps_act)
+        kernel2_maps = Conv1D(filters = self.filter_size, kernel_size = 2, activation = 'linear')(x)
+        kernel2_maps_act = self.act_blend(kernel2_maps)
+        kernel2_conc = self.pooling_blend(kernel2_maps_act)
 
-        # kernel3_maps = Conv1D(filters = 50, kernel_size = 3, activation = 'linear')(x)
+        # kernel3_maps = Conv1D(filters = self.filter_size, kernel_size = 3, activation = 'linear')(x)
         # kernel3_maps_act = self.act_blend(kernel3_maps)
         # kernel3_conc = self.pooling_blend(kernel3_maps_act)
 
-        # kernel4_maps = Conv1D(filters = 50, kernel_size = 4, activation = 'linear')(x)
+        # kernel4_maps = Conv1D(filters = self.filter_size, kernel_size = 4, activation = 'linear')(x)
         # kernel4_maps_act = self.act_blend(kernel4_maps)
         # kernel4_conc = self.pooling_blend(kernel4_maps_act)
 
-        # conc = concatenate([kernel1_conc, kernel2_conc, kernel3_conc, kernel4_conc])
+        conc = concatenate([kernel1_conc, kernel2_conc]) #, kernel3_conc, kernel4_conc])
 
         # conc = self.pooling_blend(x)
         # full_conv_pre_act_0 = Dense(self.hidden_dim[0])(conc)
@@ -131,7 +134,7 @@ class CNN_Model:
         # full_conv_pre_act_1 = Dense(self.hidden_dim[1])(full_conv_0)
         # full_conv_1 = self.act_blend(full_conv_pre_act_1)
 
-        outp = Dense(6, activation="sigmoid")(kernel1_conc)
+        outp = Dense(6, activation="sigmoid")(conc)
 
         model = Model(inputs = inp, outputs = outp)
         print (model.summary())
@@ -146,22 +149,24 @@ class CNN_Model:
         fixed_embedding = Embedding(self.max_token, self.embedding_dim, weights=[self.embedding_weight] , trainable=False)
         # retrain_embedding = Embedding(self.max_token, self.embedding_dim, weights=[self.embedding_weight] , trainable=True)
         fixed_x = fixed_embedding(inp)
+        x = Bidirectional(GRU(self.context_vector_dim, return_sequences=True))(fixed_x)
         # retrain_x = retrain_embedding(inp)
         # x = Lambda(lambda x: backend.stack([x[0], x[1]], axis = 1))([fixed_x, retrain_x])
         # x = SpatialDropout1D(0.2)(x)
-        x = Reshape((self.max_len, self.embedding_dim, 1))(fixed_x)
+        x = Reshape((self.max_len, self.context_vector_dim * 2, 1))(x)
 
-        x = Conv2D(filters = self.filter_size, kernel_size = [3, 3], activation = 'relu', \
-                     data_format = 'channels_last', padding='same')(x)
-        x = self.pooling2d_blend(x, pool_size = (2, 2))
+        # x = Conv2D(filters = self.filter_size, kernel_size = [3, 3], activation = 'relu', \
+        #              data_format = 'channels_last', padding='same')(x)
+        x1 = self.pooling2d_blend(x, pool_size = (10, 1), strides = None, padding = 'valid')
+        x2 = self.pooling2d_blend(x, pool_size = (20, 1), strides = None, padding = 'valid')
 
-        x = Conv2D(filters = self.filter_size, kernel_size = [3, 3], activation = 'relu', \
-                     data_format = 'channels_last', padding='same')(x)
-        x = self.pooling2d_blend(x, pool_size = (2, 2))
+        # x = Conv2D(filters = self.filter_size, kernel_size = [3, 3], activation = 'relu', \
+        #              data_format = 'channels_last', padding='same')(x)
+        # x = self.pooling2d_blend(x, pool_size = (2, 2))
 
-        x = Conv2D(filters = self.filter_size, kernel_size = [3, 3], activation = 'relu', \
-                     data_format = 'channels_last', padding='same')(x)
-        x = self.pooling2d_blend(x, pool_size = (5, 5))
+        # x = Conv2D(filters = self.filter_size, kernel_size = [3, 3], activation = 'relu', \
+        #              data_format = 'channels_last', padding='same')(x)
+        # x = self.pooling2d_blend(x, pool_size = (5, 5))
         # kernel2_maps = Conv1D(filters = 50, kernel_size = 2, activation = 'linear')(x)
         # kernel2_maps_act = self.act_blend(kernel2_maps)
         # kernel2_conc = self.pooling_blend(kernel2_maps_act)
@@ -174,14 +179,14 @@ class CNN_Model:
         # kernel4_maps_act = self.act_blend(kernel4_maps)
         # kernel4_conc = self.pooling_blend(kernel4_maps_act)
 
-        # conc = concatenate([kernel1_conc, kernel2_conc, kernel3_conc, kernel4_conc])
+        conc = concatenate([x1, x2], axis = 1)
 
         # conc = self.pooling_blend(x)
         # full_conv_pre_act_0 = Dense(self.hidden_dim[0])(conc)
         # full_conv_0 = self.act_blend(full_conv_pre_act_0)
         # full_conv_pre_act_1 = Dense(self.hidden_dim[1])(full_conv_0)
         # full_conv_1 = self.act_blend(full_conv_pre_act_1)
-        flat = Flatten()(x)
+        flat = Flatten()(conc)
         outp = Dense(6, activation="sigmoid")(flat)
 
         model = Model(inputs = inp, outputs = outp)

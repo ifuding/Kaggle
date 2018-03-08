@@ -13,7 +13,7 @@ from CNN_Keras import CNN_Model
 MAX_NUM_WORDS = 100000
 RNN_EMBEDDING_DIM = 300
 MAX_SEQUENCE_LEN = 100
-LSTM_UNIT = 128
+LSTM_UNIT = 64
 RCNN_HIDDEN_UNIT = [64, 32]
 
 ## DNN Param
@@ -108,8 +108,8 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
             print('stacking_label shape: {0}'.format(stacking_label.shape))
         models.append(onefold_models[0])
         num_fold += 1
-        if num_fold == 1:
-            break
+        #if num_fold == 5:
+        #    break
     if stacking:
         test_preds /= fold
         test_data = np.c_[test_data, test_preds]

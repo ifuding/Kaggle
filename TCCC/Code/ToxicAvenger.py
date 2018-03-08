@@ -80,7 +80,7 @@ print("Training------")
 multi_label_models = []
 sub2 = pd.DataFrame(np.zeros((test.shape[0], len(coly))), columns = coly)
 models, _, _, _ = nfold_train(train_data, train_label, fold = 10, model_types = ['cnn'], \
-                    tokenizer = tokenizer, num_words = MAX_NUM_WORDS, valide_data = train_data, valide_label = train_label)
+                    tokenizer = tokenizer, num_words = MAX_NUM_WORDS) #, valide_data = train_data, valide_label = train_label)
 # exit(0)
 # for c in coly:
 #     print("------Label: {0}".format(c))
