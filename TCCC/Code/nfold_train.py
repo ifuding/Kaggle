@@ -7,14 +7,14 @@ from keras_train import keras_train
 import gensim
 from RCNN_Keras import get_word2vec, RCNN_Model
 from RNN_Keras import RNN_Model
-from CNN_Keras import CNN_Model
+from CNN_Keras import CNN_Model, get_word2vec_embedding
 
 # RNN_PARAMS
 MAX_NUM_WORDS = 100000
 RNN_EMBEDDING_DIM = 300
 MAX_SEQUENCE_LEN = 100
-LSTM_UNIT = 64
-RCNN_HIDDEN_UNIT = [64, 32]
+LSTM_UNIT = 32
+RCNN_HIDDEN_UNIT = [128, 64]
 
 ## DNN Param
 DNN_EPOCHS = 1
@@ -38,6 +38,8 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
     test_preds = None
     num_fold = 0
     models = []
+    embedding_weight = get_word2vec_embedding(location = '../Data/GoogleNews-vectors-negative300.bin', \
+            tokenizer = tokenizer, nb_words = num_words, embed_size = RNN_EMBEDDING_DIM)
     for train_index, test_index in kf.split(train_data):
         print('fold: %d th train :-)' % (num_fold))
         print('Train size: {} Valide size: {}'.format(train_index.shape[0], test_index.shape[0]))
@@ -87,9 +89,10 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
             elif model_type == 'cnn':
                 model = CNN_Model(max_token = num_words, num_classes = 2, context_vector_dim = LSTM_UNIT, \
                         hidden_dim = RCNN_HIDDEN_UNIT, max_len = MAX_SEQUENCE_LEN, embedding_dim = RNN_EMBEDDING_DIM, \
-                        tokenizer = tokenizer)
+                        tokenizer = tokenizer, embedding_weight = embedding_weight)
+                if num_fold == 0:
+                    print(model.model.summary())
                 model.train(train_part, train_part_label, valide_part, valide_part_label)
-                # print(model.model.summary())
                 onefold_models.append((model, 'cnn'))
         if stacking:
             valide_pred = [model_eval(model[0], model[1], valide_part) for model in onefold_models]

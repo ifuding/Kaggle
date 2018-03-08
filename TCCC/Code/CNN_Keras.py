@@ -12,7 +12,7 @@ import os
 from keras import backend
 from keras.layers import Dense, Input, Lambda, LSTM, TimeDistributed, SimpleRNN, \
         GRU, Bidirectional, GlobalAveragePooling1D, GlobalMaxPooling1D, Activation, \
-        SpatialDropout1D, Conv2D, Conv1D, Reshape, Flatten, AveragePooling2D, MaxPooling2D
+        SpatialDropout1D, Conv2D, Conv1D, Reshape, Flatten, AveragePooling2D, MaxPooling2D, Dropout
 from keras.layers.merge import concatenate
 from keras.layers.embeddings import Embedding
 from keras.models import Model
@@ -23,7 +23,7 @@ from keras_train import RocAucEvaluation
 
 
 ## DNN Param
-DNN_EPOCHS = 10
+DNN_EPOCHS = 5
 BATCH_SIZE = 32
 
 class MySentences(object):
@@ -63,7 +63,8 @@ def get_word2vec_embedding(location = 'wv_model_norm.gensim', tokenizer = None, 
 class CNN_Model:
     """
     """
-    def __init__(self, max_token, num_classes, context_vector_dim, hidden_dim, max_len, embedding_dim, tokenizer):
+    def __init__(self, max_token, num_classes, context_vector_dim, hidden_dim, max_len, embedding_dim, \
+                tokenizer, embedding_weight):
         self.num_classes = num_classes
         self.context_vector_dim = context_vector_dim
         self.hidden_dim = hidden_dim
@@ -71,8 +72,7 @@ class CNN_Model:
         self.embedding_dim = embedding_dim
         self.max_len = max_len
         self.tokenizer = tokenizer
-        self.embedding_weight = get_word2vec_embedding(location = '../Data/GoogleNews-vectors-negative300.bin', \
-            tokenizer = self.tokenizer, nb_words = self.max_token, embed_size = self.embedding_dim)
+        self.embedding_weight = embedding_weight
         self.filter_size = 100
         self.model = self.Create_CNN()
 
@@ -106,7 +106,8 @@ class CNN_Model:
         embedding = Embedding(self.max_token, self.embedding_dim, weights=[self.embedding_weight] , trainable=False)
         x = embedding(inp)
         # x = SpatialDropout1D(0.2)(x)
-        # x = Bidirectional(GRU(self.context_vector_dim, return_sequences=True))(x)
+        # rnn_maps = Bidirectional(GRU(self.context_vector_dim, return_sequences=True))(x)
+        # rnn_conc = self.pooling_blend(rnn_maps)
         # x = Reshape(())
         # x = SpatialDropout1D(0.2)(x)
 
@@ -118,18 +119,31 @@ class CNN_Model:
         kernel2_maps_act = self.act_blend(kernel2_maps)
         kernel2_conc = self.pooling_blend(kernel2_maps_act)
 
-        # kernel3_maps = Conv1D(filters = self.filter_size, kernel_size = 3, activation = 'linear')(x)
-        # kernel3_maps_act = self.act_blend(kernel3_maps)
-        # kernel3_conc = self.pooling_blend(kernel3_maps_act)
+        kernel3_maps = Conv1D(filters = self.filter_size, kernel_size = 3, activation = 'linear')(x)
+        kernel3_maps_act = self.act_blend(kernel3_maps)
+        kernel3_conc = self.pooling_blend(kernel3_maps_act)
 
-        # kernel4_maps = Conv1D(filters = self.filter_size, kernel_size = 4, activation = 'linear')(x)
-        # kernel4_maps_act = self.act_blend(kernel4_maps)
-        # kernel4_conc = self.pooling_blend(kernel4_maps_act)
+        kernel4_maps = Conv1D(filters = self.filter_size, kernel_size = 4, activation = 'linear')(x)
+        kernel4_maps_act = self.act_blend(kernel4_maps)
+        kernel4_conc = self.pooling_blend(kernel4_maps_act)
 
-        conc = concatenate([kernel1_conc, kernel2_conc]) #, kernel3_conc, kernel4_conc])
+        kernel5_maps = Conv1D(filters = self.filter_size, kernel_size = 5, activation = 'linear')(x)
+        kernel5_maps_act = self.act_blend(kernel5_maps)
+        kernel5_conc = self.pooling_blend(kernel5_maps_act)
+
+        kernel6_maps = Conv1D(filters = self.filter_size, kernel_size = 6, activation = 'linear')(x)
+        kernel6_maps_act = self.act_blend(kernel6_maps)
+        kernel6_conc = self.pooling_blend(kernel6_maps_act)
+
+        kernel7_maps = Conv1D(filters = self.filter_size, kernel_size = 7, activation = 'linear')(x)
+        kernel7_maps_act = self.act_blend(kernel7_maps)
+        kernel7_conc = self.pooling_blend(kernel7_maps_act)
+
+        conc = concatenate([kernel1_conc, kernel2_conc, kernel3_conc, kernel4_conc, kernel5_conc, kernel6_conc, kernel7_conc])
 
         # conc = self.pooling_blend(x)
         # full_conv_pre_act_0 = Dense(self.hidden_dim[0])(conc)
+        # full_conv_pre_act_0 = Dropout(0.2)(full_conv_pre_act_0)
         # full_conv_0 = self.act_blend(full_conv_pre_act_0)
         # full_conv_pre_act_1 = Dense(self.hidden_dim[1])(full_conv_0)
         # full_conv_1 = self.act_blend(full_conv_pre_act_1)
@@ -137,7 +151,7 @@ class CNN_Model:
         outp = Dense(6, activation="sigmoid")(conc)
 
         model = Model(inputs = inp, outputs = outp)
-        print (model.summary())
+        # print (model.summary())
         model.compile(optimizer = "adam", loss = "binary_crossentropy", metrics = ["accuracy"])
         return model
 
@@ -188,9 +202,8 @@ class CNN_Model:
         # full_conv_1 = self.act_blend(full_conv_pre_act_1)
         flat = Flatten()(conc)
         outp = Dense(6, activation="sigmoid")(flat)
-
         model = Model(inputs = inp, outputs = outp)
-        print (model.summary())
+        print(model.summary())
         model.compile(optimizer = "adam", loss = "binary_crossentropy", metrics = ["accuracy"])
         return model
 
