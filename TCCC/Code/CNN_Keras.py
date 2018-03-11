@@ -20,7 +20,7 @@ from keras.preprocessing.text import Tokenizer, text_to_word_sequence
 from keras.preprocessing.sequence import pad_sequences
 from keras.callbacks import EarlyStopping
 from keras_train import RocAucEvaluation
-
+import vdcnn
 
 ## DNN Param
 DNN_EPOCHS = 5
@@ -51,11 +51,15 @@ def get_word2vec_embedding(location = 'wv_model_norm.gensim', tokenizer = None, 
     print("-----Load Word2Vec Model-----")
     wv_model = gensim.models.KeyedVectors.load_word2vec_format(location, binary=True)
     word_index = tokenizer.word_index
+    print("word_index size: {0}".format(len(word_index)))
     embedding_matrix = np.zeros((nb_words, embed_size))
+    word_in_corpus = 0
     for word, i in word_index.items():
         if i >= nb_words: continue
         if word in wv_model:
             embedding_matrix[i] = wv_model[word]
+            word_in_corpus += 1
+    print("{0} Words in corpus!".format(word_in_corpus))
 
     return embedding_matrix
 
@@ -74,11 +78,13 @@ class CNN_Model:
         self.tokenizer = tokenizer
         self.embedding_weight = embedding_weight
         self.filter_size = 100
-        self.model = self.Create_CNN()
+        # self.model = self.Create_CNN()
+        self.model = vdcnn.build_model(num_filters = [64, 128, 256], sequence_max_length = self.max_len)
 
 
     def act_blend(self, linear_input):
         full_conv_relu = Activation('relu')(linear_input)
+        return full_conv_relu
         full_conv_sigmoid = Activation('sigmoid')(linear_input)
         full_conv = concatenate([full_conv_relu, full_conv_sigmoid], axis = 1)
         return full_conv
@@ -103,9 +109,9 @@ class CNN_Model:
         """
         """
         inp = Input(shape=(self.max_len, ))
-        embedding = Embedding(self.max_token, self.embedding_dim, weights=[self.embedding_weight] , trainable=False)
+        embedding = Embedding(self.max_token, self.embedding_dim) #, weights=[self.embedding_weight] , trainable=True)
         x = embedding(inp)
-        # x = SpatialDropout1D(0.2)(x)
+        x = SpatialDropout1D(0.2)(x)
         # rnn_maps = Bidirectional(GRU(self.context_vector_dim, return_sequences=True))(x)
         # rnn_conc = self.pooling_blend(rnn_maps)
         # x = Reshape(())
@@ -142,8 +148,8 @@ class CNN_Model:
         conc = concatenate([kernel1_conc, kernel2_conc, kernel3_conc, kernel4_conc, kernel5_conc, kernel6_conc, kernel7_conc])
 
         # conc = self.pooling_blend(x)
-        # full_conv_pre_act_0 = Dense(self.hidden_dim[0])(conc)
-        # full_conv_pre_act_0 = Dropout(0.2)(full_conv_pre_act_0)
+        # full_conv = Dense(self.hidden_dim[0], activation = 'relu')(conc)
+        # full_conv = Dropout(0.2)(full_conv)
         # full_conv_0 = self.act_blend(full_conv_pre_act_0)
         # full_conv_pre_act_1 = Dense(self.hidden_dim[1])(full_conv_0)
         # full_conv_1 = self.act_blend(full_conv_pre_act_1)

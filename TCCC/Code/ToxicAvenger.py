@@ -8,9 +8,11 @@ from time import gmtime, strftime
 from RCNN_Keras import get_word2vec
 from keras.preprocessing.text import Tokenizer, text_to_word_sequence
 from keras.preprocessing.sequence import pad_sequences
+from data_helper import data_helper
 
-MAX_NUM_WORDS = 50000
-MAX_SEQUENCE_LEN = 100
+MAX_NUM_WORDS = 69
+MAX_SEQUENCE_LEN = 512
+EMBEDDING_DIM = 16
 
 zpolarity = {0:'zero',1:'one',2:'two',3:'three',4:'four',5:'five',6:'six',7:'seven',8:'eight',9:'nine',10:'ten'}
 zsign = {-1:'negative',  0.: 'neutral', 1:'positive'}
@@ -35,6 +37,10 @@ tid = test['id'].values
 # test['comment_text'] = test.apply(lambda r: str(r['comment_text']) + ' polarity' +  zsign[np.sign(r['polarity'])] + zpolarity[np.abs(r['polarity'])], axis=1)
 
 df = pd.concat([train['comment_text'], test['comment_text']], axis=0)
+# print(type(df))
+# df_len = df.map(lambda x: len(x))
+# print ("min: {0} max: {1} median: {2} mean: {3} std: {4}".format(df_len.min(), df_len.max(), df_len.median(), df_len.mean(), df_len.std()))
+# exit(0)
 df = df.fillna("unknown")
 
 print('Word2Vec...')
@@ -65,11 +71,13 @@ data = df.values
 
 # Text to sequence
 print('Tokenizer...')
-tokenizer = Tokenizer(num_words = MAX_NUM_WORDS)
-tokenizer.fit_on_texts(data)
-data = tokenizer.texts_to_sequences(data)
-data = pad_sequences(data, maxlen = MAX_SEQUENCE_LEN)
-svd_name = "token_sequence" + strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) + ".npy"
+tokenizer = None # Tokenizer(num_words = MAX_NUM_WORDS)
+# tokenizer.fit_ontokenizerta, maxlen = MAX_SEQUENCE_LEN)
+data_helper = data_helper(sequence_max_length = MAX_SEQUENCE_LEN)
+data = data_helper.text2sequence(data)
+# print(data[:2])
+# exit(0)
+# svd_name = "token_sequence" + strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) + ".npy"
 # np.save(svd_name, data)
 # data = np.load('token_sequence_2018_03_04_15_50_25.npy')
 
@@ -80,7 +88,7 @@ print("Training------")
 multi_label_models = []
 sub2 = pd.DataFrame(np.zeros((test.shape[0], len(coly))), columns = coly)
 models, _, _, _ = nfold_train(train_data, train_label, fold = 10, model_types = ['cnn'], \
-                    tokenizer = tokenizer, num_words = MAX_NUM_WORDS) #, valide_data = train_data, valide_label = train_label)
+                    tokenizer = tokenizer, num_words = MAX_NUM_WORDS, max_seq_len = MAX_SEQUENCE_LEN, embedding_dim = EMBEDDING_DIM) #, valide_data = train_data, valide_label = train_label)
 # exit(0)
 # for c in coly:
 #     print("------Label: {0}".format(c))

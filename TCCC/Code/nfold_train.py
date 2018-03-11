@@ -23,7 +23,7 @@ BATCH_SIZE = 128
 def nfold_train(train_data, train_label, fold = 5, model_types = None,
             stacking = False, valide_data = None, valide_label = None,
             test_data = None, train_weight = None, valide_weight = None, 
-            tokenizer = None, num_words = None):
+            tokenizer = None, num_words = None, max_seq_len = None, embedding_dim = None):
     """
     nfold Training
     """
@@ -38,8 +38,8 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
     test_preds = None
     num_fold = 0
     models = []
-    embedding_weight = get_word2vec_embedding(location = '../Data/GoogleNews-vectors-negative300.bin', \
-            tokenizer = tokenizer, nb_words = num_words, embed_size = RNN_EMBEDDING_DIM)
+    embedding_weight = None #get_word2vec_embedding(location = '../Data/GoogleNews-vectors-negative300.bin', \
+    #         tokenizer = tokenizer, nb_words = num_words, embed_size = RNN_EMBEDDING_DIM)
     for train_index, test_index in kf.split(train_data):
         print('fold: %d th train :-)' % (num_fold))
         print('Train size: {} Valide size: {}'.format(train_index.shape[0], test_index.shape[0]))
@@ -88,7 +88,7 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
                 onefold_models.append((model, 'rnn'))
             elif model_type == 'cnn':
                 model = CNN_Model(max_token = num_words, num_classes = 2, context_vector_dim = LSTM_UNIT, \
-                        hidden_dim = RCNN_HIDDEN_UNIT, max_len = MAX_SEQUENCE_LEN, embedding_dim = RNN_EMBEDDING_DIM, \
+                        hidden_dim = RCNN_HIDDEN_UNIT, max_len = max_seq_len, embedding_dim = embedding_dim, \
                         tokenizer = tokenizer, embedding_weight = embedding_weight)
                 if num_fold == 0:
                     print(model.model.summary())
@@ -111,8 +111,8 @@ def nfold_train(train_data, train_label, fold = 5, model_types = None,
             print('stacking_label shape: {0}'.format(stacking_label.shape))
         models.append(onefold_models[0])
         num_fold += 1
-        #if num_fold == 5:
-        #    break
+        if num_fold == 5:
+            break
     if stacking:
         test_preds /= fold
         test_data = np.c_[test_data, test_preds]
