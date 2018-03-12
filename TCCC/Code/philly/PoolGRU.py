@@ -6,6 +6,7 @@ from sklearn import feature_extraction, ensemble, decomposition, pipeline
 # from textblob import TextBlob
 from nfold_train import nfold_train, models_eval
 from time import gmtime, strftime
+
 from tensorflow.python.keras.preprocessing.text import Tokenizer, text_to_word_sequence
 from tensorflow.python.keras.preprocessing.sequence import pad_sequences
 # from data_helper import data_helper
@@ -17,20 +18,20 @@ zsign = {-1:'negative',  0.: 'neutral', 1:'positive'}
 
 flags = tf.app.flags
 flags.DEFINE_string('input-training-data-path', "../../Data/", 'data dir override')
-flags.DEFINE_string('output-model-path', None, 'model dir override')
-flags.DEFINE_integer('vocab_size', 400000, 'vocab size')
+flags.DEFINE_string('output-model-path', ".", 'model dir override')
+flags.DEFINE_integer('vocab_size', 300000, 'vocab size')
 flags.DEFINE_integer('max_seq_len', 100, 'max sequence length')
 flags.DEFINE_integer('nfold', 10, 'number of folds')
-flags.DEFINE_integer('ensemble_nfold', 10, 'number of ensemble models')
+flags.DEFINE_integer('ensemble_nfold', 5, 'number of ensemble models')
 flags.DEFINE_integer('emb_dim', 300, 'term embedding dim')
 flags.DEFINE_integer('rnn_unit', 10, 'RNN Units')
 flags.DEFINE_integer('epochs', 1, 'number of Epochs')
-flags.DEFINE_integer('batch_size', 32, 'Batch size')
+flags.DEFINE_integer('batch_size', 128, 'Batch size')
 flags.DEFINE_bool("load_wv_model", True, "Whether to load word2vec model")
 flags.DEFINE_string('wv_model_type', "fast_text", 'word2vec model type')
 flags.DEFINE_bool("char_split", False, "Whether to split text into character")
-flags.DEFINE_integer('filter_size', 100, 'CNN filter size')
-flags.DEFINE_bool("fix_wv_model", True, "Whether to fix word2vec model")
+flags.DEFINE_integer('filter_size', 200, 'CNN filter size')
+flags.DEFINE_bool("fix_wv_model", False, "Whether to fix word2vec model")
 FLAGS = flags.FLAGS
 
 train = pd.read_csv(FLAGS.input_training_data_path + '/train.csv')
@@ -141,6 +142,6 @@ sub_name = "sub" + strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) + ".csv"
 blend.to_csv(sub_name, index=False)
 
 # Move to hdfs
-if not os.path.isdir(FLAGS.output_model_path):
-    os.makedirs(FLAGS.output_model_path, exist_ok=True)
-shutil.move(sub_name, FLAGS.output_model_path)
+# if not os.path.isdir(FLAGS.output_model_path):
+#     os.makedirs(FLAGS.output_model_path, exist_ok=True)
+# shutil.move(sub_name, FLAGS.output_model_path)
