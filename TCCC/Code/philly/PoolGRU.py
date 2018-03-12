@@ -3,20 +3,20 @@ import pandas as pd
 import sklearn
 import tensorflow as tf
 from sklearn import feature_extraction, ensemble, decomposition, pipeline
-from textblob import TextBlob
+# from textblob import TextBlob
 from nfold_train import nfold_train, models_eval
 from time import gmtime, strftime
-from RCNN_Keras import get_word2vec
-from keras.preprocessing.text import Tokenizer, text_to_word_sequence
-from keras.preprocessing.sequence import pad_sequences
-from data_helper import data_helper
-
+from tensorflow.python.keras.preprocessing.text import Tokenizer, text_to_word_sequence
+from tensorflow.python.keras.preprocessing.sequence import pad_sequences
+# from data_helper import data_helper
+import shutil
+import os
 
 zpolarity = {0:'zero',1:'one',2:'two',3:'three',4:'four',5:'five',6:'six',7:'seven',8:'eight',9:'nine',10:'ten'}
 zsign = {-1:'negative',  0.: 'neutral', 1:'positive'}
 
 flags = tf.app.flags
-flags.DEFINE_string('input-training-data-path', "../Data/", 'data dir override')
+flags.DEFINE_string('input-training-data-path', "../../Data/", 'data dir override')
 flags.DEFINE_string('output-model-path', None, 'model dir override')
 flags.DEFINE_integer('vocab_size', 400000, 'vocab size')
 flags.DEFINE_integer('max_seq_len', 100, 'max sequence length')
@@ -139,3 +139,8 @@ for c in coly:
 blend = sub2 #blend[sub2.columns]
 sub_name = "sub" + strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) + ".csv"
 blend.to_csv(sub_name, index=False)
+
+# Move to hdfs
+if not os.path.isdir(FLAGS.output_model_path):
+    os.makedirs(FLAGS.output_model_path, exist_ok=True)
+shutil.move(sub_name, FLAGS.output_model_path)

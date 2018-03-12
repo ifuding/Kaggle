@@ -4,24 +4,39 @@
 #         neural networks for text classification. In AAAI, pp. 2267-2273.
 #         http://www.aaai.org/ocs/index.php/AAAI/AAAI15/paper/view/9745
 
-import gensim
+# import gensim
 import numpy as np
 import string
 import os
+from sklearn import metrics
 
-from keras import backend
-from keras.layers import Dense, Input, Lambda, LSTM, TimeDistributed, SimpleRNN, \
+from tensorflow.python.keras import backend
+from tensorflow.python.keras.layers import Dense, Input, Lambda, LSTM, TimeDistributed, SimpleRNN, \
         GRU, Bidirectional, GlobalAveragePooling1D, GlobalMaxPooling1D, Activation, \
         SpatialDropout1D, Conv2D, Conv1D, Reshape, Flatten, AveragePooling2D, MaxPooling2D, Dropout, \
-        MaxPooling1D, AveragePooling1D
-from keras.layers.merge import concatenate
-from keras.layers.embeddings import Embedding
-from keras.models import Model
-from keras.preprocessing.text import Tokenizer, text_to_word_sequence
-from keras.preprocessing.sequence import pad_sequences
-from keras.callbacks import EarlyStopping
-from keras_train import RocAucEvaluation
-import vdcnn
+        MaxPooling1D, AveragePooling1D, Embedding
+from tensorflow.python.keras.layers import concatenate
+# from tensorflow.python.keras.layers.embeddings import Embedding
+from tensorflow.python.keras.models import Model
+from tensorflow.python.keras.preprocessing.text import Tokenizer, text_to_word_sequence
+from tensorflow.python.keras.preprocessing.sequence import pad_sequences
+from tensorflow.python.keras.callbacks import EarlyStopping, Callback
+# from keras_train import RocAucEvaluation
+# import vdcnn
+
+
+class RocAucEvaluation(Callback):
+    def __init__(self, validation_data=(), interval=1):
+        super(Callback, self).__init__()
+
+        self.interval = interval
+        self.X_val, self.y_val = validation_data
+
+    def on_epoch_end(self, epoch, logs={}):
+        if epoch % self.interval == 0:
+            y_pred = self.model.predict(self.X_val, verbose=0)
+            score = metrics.roc_auc_score(self.y_val, y_pred)
+            print("\n ROC-AUC - epoch: %d - score: %.6f \n" % (epoch+1, score))
 
 
 class MySentences(object):
@@ -53,7 +68,7 @@ def get_word2vec_embedding(location = 'wv_model_norm.gensim', tokenizer = None, 
         wv_model = gensim.models.KeyedVectors.load_word2vec_format(location, binary=True)
     elif model_type == "fast_text":
         wv_model = dict()
-        with open(location) as emb_file:
+        with open(location, encoding="utf8") as emb_file:
         #, open("../Data/wiki.en.vec.indata", "w+") as emb_file_indata:
             for line in emb_file:
                 ls = line.strip().split(' ')
