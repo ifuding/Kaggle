@@ -84,9 +84,11 @@ def nfold_train(train_data, train_label, model_types = None,
                 onefold_models.append((model, 'rnn'))
             elif model_type == 'cnn':
                 model = CNN_Model(max_token = flags.vocab_size, num_classes = 2, context_vector_dim = flags.rnn_unit, \
-                        hidden_dim = RCNN_HIDDEN_UNIT, max_len = flags.max_seq_len, embedding_dim = flags.emb_dim, \
+                        hidden_dim = flags.full_connect_hn, max_len = flags.max_seq_len, embedding_dim = flags.emb_dim, \
                         tokenizer = tokenizer, embedding_weight = embedding_weight, batch_size = flags.batch_size, \
-                        epochs = flags.epochs, filter_size = flags.filter_size, fix_wv_model = flags.fix_wv_model)
+                        epochs = flags.epochs, filter_size = flags.filter_size, fix_wv_model = flags.fix_wv_model, \
+                        batch_interval = flags.batch_interval, emb_dropout = flags.emb_dropout, \
+                        full_connect_dropout = flags.full_connect_dropout)
                 if num_fold == 0:
                     print(model.model.summary())
                 model.train(train_part, train_part_label, valide_part, valide_part_label)

@@ -26,17 +26,23 @@ from tensorflow.python.keras.callbacks import EarlyStopping, Callback
 
 
 class RocAucEvaluation(Callback):
-    def __init__(self, validation_data=(), interval=1):
+    def __init__(self, validation_data=(), interval=1, batch_interval = 1000, verbose = 2):
         super(Callback, self).__init__()
 
         self.interval = interval
         self.X_val, self.y_val = validation_data
+        self.batch_interval = batch_interval
+        self.verbose = verbose
 
     def on_epoch_end(self, epoch, logs={}):
         if epoch % self.interval == 0:
             y_pred = self.model.predict(self.X_val, verbose=0)
             score = metrics.roc_auc_score(self.y_val, y_pred)
             print("\n ROC-AUC - epoch: %d - score: %.6f \n" % (epoch+1, score))
+    
+    def on_batch_end(self, batch, logs={}):
+        if(self.verbose >= 2) and (batch % self.batch_interval == 0):
+            print("Hi! on_batch_end() , batch=",batch,",logs:",logs)
 
 
 class MySentences(object):
@@ -93,7 +99,8 @@ class CNN_Model:
     """
     """
     def __init__(self, max_token, num_classes, context_vector_dim, hidden_dim, max_len, embedding_dim, \
-                tokenizer, embedding_weight, batch_size, epochs, filter_size, fix_wv_model):
+                tokenizer, embedding_weight, batch_size, epochs, filter_size, fix_wv_model, batch_interval, \
+                emb_dropout, full_connect_dropout):
         self.num_classes = num_classes
         self.context_vector_dim = context_vector_dim
         self.hidden_dim = hidden_dim
@@ -104,9 +111,12 @@ class CNN_Model:
         self.embedding_weight = embedding_weight
         self.filter_size = filter_size
         self.fix_wv_model = fix_wv_model
-        self.model = self.Create_CNN()
         self.batch_size = batch_size
         self.epochs = epochs
+        self.batch_interval = batch_interval
+        self.emb_dropout = emb_dropout
+        self.full_connect_dropout = full_connect_dropout
+        self.model = self.Create_CNN()
         # self.model = vdcnn.build_model(num_filters = [64, 128, 256], sequence_max_length = self.max_len)
 
 
@@ -147,9 +157,11 @@ class CNN_Model:
         inp = Input(shape=(self.max_len, ))
         embedding = Embedding(self.max_token, self.embedding_dim, weights=[self.embedding_weight], trainable=not self.fix_wv_model)
         x = embedding(inp)
-        # x = SpatialDropout1D(0.2)(x)
-        # rnn_maps = Bidirectional(GRU(self.context_vector_dim, return_sequences=True))(x)
-        # rnn_conc = self.pooling_blend(rnn_maps)
+        if self.emb_dropout > 0:
+            x = SpatialDropout1D(self.emb_dropout)(x)
+        if self.context_vector_dim > 0:
+            rnn_maps = Bidirectional(GRU(self.context_vector_dim, return_sequences=True))(x)
+            rnn_conc = self.pooling_blend(rnn_maps)
         # x = Reshape(())
         # x = SpatialDropout1D(0.2)(x)
 
@@ -183,15 +195,21 @@ class CNN_Model:
 
         conc = concatenate([kernel1_conc, kernel2_conc, kernel3_conc, kernel4_conc, \
                     kernel5_conc, kernel6_conc, kernel7_conc], axis = 1)
+        if self.context_vector_dim > 0:
+            conc = concatenate([conc, rnn_conc], axis = 1)
 
         # conc = self.pooling_blend(x)
-        # full_conv = Dense(self.hidden_dim[0], activation = 'relu')(conc)
-        # full_conv = Dropout(0.2)(full_conv)
+        if self.hidden_dim > 0:
+            full_connect = Dense(self.hidden_dim, activation = 'relu')(conc)
+            if self.full_connect_dropout > 0:
+                full_connect = Dropout(self.full_connect_dropout)(full_connect)
+        else:
+            full_connect = conc
         # full_conv_0 = self.act_blend(full_conv_pre_act_0)
         # full_conv_pre_act_1 = Dense(self.hidden_dim[1])(full_conv_0)
         # full_conv_1 = self.act_blend(full_conv_pre_act_1)
         # flat = Flatten()(conc)
-        outp = Dense(6, activation="sigmoid")(conc)
+        outp = Dense(6, activation="sigmoid")(full_connect)
 
         model = Model(inputs = inp, outputs = outp)
         # print (model.summary())
@@ -261,7 +279,7 @@ class CNN_Model:
 
         callbacks = [
                 EarlyStopping(monitor='val_loss', patience=3, verbose=0),
-                RocAucEvaluation(validation_data=(valide_part, valide_part_label), interval=1)
+                RocAucEvaluation(validation_data=(valide_part, valide_part_label), interval=1, batch_interval = self.batch_interval)
                 ]
 
         self.model.fit(train_part, train_part_label, batch_size=self.batch_size, epochs=self.epochs,
