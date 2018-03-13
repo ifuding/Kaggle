@@ -9,7 +9,7 @@ from time import gmtime, strftime
 
 from tensorflow.python.keras.preprocessing.text import Tokenizer, text_to_word_sequence
 from tensorflow.python.keras.preprocessing.sequence import pad_sequences
-# from data_helper import data_helper
+from data_helper import data_helper
 import shutil
 import os
 
@@ -19,6 +19,7 @@ zsign = {-1:'negative',  0.: 'neutral', 1:'positive'}
 flags = tf.app.flags
 flags.DEFINE_string('input-training-data-path', "../../Data/", 'data dir override')
 flags.DEFINE_string('output-model-path', ".", 'model dir override')
+flags.DEFINE_string('model_type', "cnn", 'model type')
 flags.DEFINE_integer('vocab_size', 300000, 'vocab size')
 flags.DEFINE_integer('max_seq_len', 100, 'max sequence length')
 flags.DEFINE_integer('nfold', 10, 'number of folds')
@@ -34,8 +35,10 @@ flags.DEFINE_integer('filter_size', 100, 'CNN filter size')
 flags.DEFINE_bool("fix_wv_model", True, "Whether to fix word2vec model")
 flags.DEFINE_integer('batch_interval', 1000, 'batch print interval')
 flags.DEFINE_float("emb_dropout", 0, "embedding dropout")
-flags.DEFINE_integer('full_connect_hn', 32, 'full connect hidden units')
+flags.DEFINE_string('full_connect_hn', "64, 32", 'full connect hidden units')
 flags.DEFINE_float("full_connect_dropout", 0, "full connect drop out")
+flags.DEFINE_string('vdcnn_filters', "64, 128, 256", 'vdcnn filters')
+flags.DEFINE_integer('vdcc_top_k', 8, 'vdcc top_k')
 FLAGS = flags.FLAGS
 
 train = pd.read_csv(FLAGS.input_training_data_path + '/train.csv')
@@ -108,7 +111,7 @@ test_data = data[nrow:]
 print("Training------")
 multi_label_models = []
 sub2 = pd.DataFrame(np.zeros((test.shape[0], len(coly))), columns = coly)
-models, _, _, _ = nfold_train(train_data, train_label, flags = FLAGS, model_types = ['cnn'], tokenizer = tokenizer) #, valide_data = train_data, valide_label = train_label)
+models, _, _, _ = nfold_train(train_data, train_label, flags = FLAGS, model_types = [FLAGS.model_type], tokenizer = tokenizer) #, valide_data = train_data, valide_label = train_label)
 # exit(0)
 # for c in coly:
 #     print("------Label: {0}".format(c))
@@ -146,6 +149,6 @@ sub_name = "sub" + strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) + ".csv"
 blend.to_csv(sub_name, index=False)
 
 # Move to hdfs
-# if not os.path.isdir(FLAGS.output_model_path):
-#     os.makedirs(FLAGS.output_model_path, exist_ok=True)
-# shutil.move(sub_name, FLAGS.output_model_path)
+if not os.path.isdir(FLAGS.output_model_path):
+    os.makedirs(FLAGS.output_model_path, exist_ok=True)
+shutil.move(sub_name, FLAGS.output_model_path)

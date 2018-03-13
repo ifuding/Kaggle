@@ -26,7 +26,7 @@ from tensorflow.python.keras.callbacks import EarlyStopping, Callback
 
 
 class RocAucEvaluation(Callback):
-    def __init__(self, validation_data=(), interval=1, batch_interval = 1000, verbose = 2):
+    def __init__(self, validation_data=(), interval=1, batch_interval = 1000000, verbose = 2):
         super(Callback, self).__init__()
 
         self.interval = interval
@@ -199,8 +199,8 @@ class CNN_Model:
             conc = concatenate([conc, rnn_conc], axis = 1)
 
         # conc = self.pooling_blend(x)
-        if self.hidden_dim > 0:
-            full_connect = Dense(self.hidden_dim, activation = 'relu')(conc)
+        if self.hidden_dim[0] > 0:
+            full_connect = Dense(self.hidden_dim[0], activation = 'relu')(conc)
             if self.full_connect_dropout > 0:
                 full_connect = Dropout(self.full_connect_dropout)(full_connect)
         else:
