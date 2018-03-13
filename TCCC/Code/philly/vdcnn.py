@@ -5,6 +5,7 @@ from tensorflow.python.keras.layers import Input, Dense, Dropout, Lambda, Activa
         Flatten, Conv1D, Embedding, MaxPooling1D
 from tensorflow.python.keras.optimizers import SGD
 from CNN_Keras import RocAucEvaluation
+from tensorflow.python.keras.callbacks import EarlyStopping, Callback
 
 class ConvBlockLayer(object):
     """
@@ -35,7 +36,7 @@ class VDCNN_Model:
     """
     """
     def __init__(self, num_filters, sequence_max_length, hidden_dim, embedding_size, dense_dropout, \
-                    batch_size, top_k):
+                    batch_size, top_k, epochs):
         self.num_filters = num_filters
         self.sequence_max_length = sequence_max_length
         self.hidden_dim = hidden_dim
@@ -43,6 +44,7 @@ class VDCNN_Model:
         self.dense_dropout = dense_dropout
         self.batch_size = batch_size
         self.top_k = top_k
+        self.epochs = epochs
         self.model = self.build_model()
 
 
@@ -50,7 +52,7 @@ class VDCNN_Model:
 
         inputs = Input(shape=(self.sequence_max_length, ), dtype='int32', name='inputs')
 
-        embedded_sent = Embedding(71, self.embedding_size, input_length=self.sequence_max_length)(inputs)
+        embedded_sent = Embedding(69, self.embedding_size, input_length=self.sequence_max_length)(inputs)
 
         # First conv layer
         conv = Conv1D(filters=64, kernel_size=3, strides=2, padding="same")(embedded_sent)
@@ -81,12 +83,12 @@ class VDCNN_Model:
         fc3 = Dense(6, activation="sigmoid")(fc2)
 
         # define optimizer
-        sgd = SGD(lr=learning_rate, decay=1e-6, momentum=0.9, nesterov=False)
+        # sgd = SGD(lr=learning_rate, decay=1e-6, momentum=0.9, nesterov=False)
         model = Model(inputs=inputs, outputs=fc3)
         model.compile(optimizer='adam', loss='binary_crossentropy', metrics=['accuracy'])
 
-        if model_path is not None:
-            model.load_weights(model_path)
+        # if model_path is not None:
+        #     model.load_weights(model_path)
         
         return model
 

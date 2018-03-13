@@ -99,7 +99,7 @@ def nfold_train(train_data, train_label, model_types = None,
                 model = VDCNN_Model(num_filters = [int(hn.strip()) for hn in flags.vdcnn_filters.strip().split(',')], \
                         sequence_max_length = flags.max_seq_len, top_k = flags.vdcc_top_k, embedding_size = flags.emb_dim, \
                         hidden_dim = [int(hn.strip()) for hn in flags.full_connect_hn.strip().split(',')], \
-                        batch_size = flags.batch_size, dense_dropout = flags.full_connect_dropout)
+                        batch_size = flags.batch_size, dense_dropout = flags.full_connect_dropout, epochs = flags.epochs)
                 if num_fold == 0:
                     print(model.model.summary())
                 model.train(train_part, train_part_label, valide_part, valide_part_label)
