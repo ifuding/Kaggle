@@ -9,6 +9,7 @@ import numpy as np
 import string
 import os
 from sklearn import metrics
+import tensorflow as tf
 
 from tensorflow.python.keras import backend
 from tensorflow.python.keras.layers import Dense, Input, Lambda, LSTM, TimeDistributed, SimpleRNN, \
@@ -26,18 +27,21 @@ from tensorflow.python.keras.callbacks import EarlyStopping, Callback
 
 
 class RocAucEvaluation(Callback):
-    def __init__(self, validation_data=(), interval=1, batch_interval = 1000000, verbose = 2):
+    def __init__(self, validation_data=(), interval=1, batch_interval = 1000000, verbose = 2, \
+            scores = []):
         super(Callback, self).__init__()
 
         self.interval = interval
         self.X_val, self.y_val = validation_data
         self.batch_interval = batch_interval
         self.verbose = verbose
+        self.scores = scores
 
     def on_epoch_end(self, epoch, logs={}):
         if epoch % self.interval == 0:
             y_pred = self.model.predict(self.X_val, verbose=0)
             score = metrics.roc_auc_score(self.y_val, y_pred)
+            self.scores.append("epoch:{0} {1}".format(epoch + 1, score))
             print("\n ROC-AUC - epoch: %d - score: %.6f \n" % (epoch+1, score))
     
     def on_batch_end(self, batch, logs={}):
@@ -75,12 +79,12 @@ def get_word2vec_embedding(location = 'wv_model_norm.gensim', tokenizer = None, 
     elif model_type == "fast_text":
         wv_model = dict()
         with open(location, encoding="utf8") as emb_file:
-        #, open("../Data/wiki.en.vec.indata", "w+") as emb_file_indata:
+            # with open("../../Data/normal_stem_wv_indata", "w+") as emb_file_indata:
             for line in emb_file:
                 ls = line.strip().split(' ')
                 word = ls[0]
-                # if word in word_index:
-                #     emb_file_indata.write(line)
+                    # if word in word_index:
+                    #     emb_file_indata.write(line)
                 wv_model[word] = np.asarray(ls[1:], dtype='float32')
     print("word_index size: {0}".format(len(word_index)))
     embedding_matrix = np.zeros((nb_words, embed_size))
@@ -100,7 +104,7 @@ class CNN_Model:
     """
     def __init__(self, max_token, num_classes, context_vector_dim, hidden_dim, max_len, embedding_dim, \
                 tokenizer, embedding_weight, batch_size, epochs, filter_size, fix_wv_model, batch_interval, \
-                emb_dropout, full_connect_dropout):
+                emb_dropout, full_connect_dropout, separate_label_layer, scores, resnet_hn, top_k):
         self.num_classes = num_classes
         self.context_vector_dim = context_vector_dim
         self.hidden_dim = hidden_dim
@@ -116,6 +120,10 @@ class CNN_Model:
         self.batch_interval = batch_interval
         self.emb_dropout = emb_dropout
         self.full_connect_dropout = full_connect_dropout
+        self.separate_label_layer = separate_label_layer
+        self.scores = scores
+        self.resnet_hn = resnet_hn
+        self.top_k = top_k
         self.model = self.Create_CNN()
         # self.model = vdcnn.build_model(num_filters = [64, 128, 256], sequence_max_length = self.max_len)
 
@@ -127,10 +135,20 @@ class CNN_Model:
         full_conv = concatenate([full_conv_relu, full_conv_sigmoid], axis = 1)
         return full_conv
 
+    # k-max pooling (Finds values and indices of the k largest entries for the last dimension)
+    def _top_k(self, x):
+        x_shape = backend.int_shape(x)
+        x = tf.transpose(x, [0, 2, 1])
+        k_max = tf.nn.top_k(x, k=self.top_k)
+        return tf.reshape(k_max[0], (-1, x_shape[-1] * self.top_k))
+
 
     def pooling_blend(self, input):
         avg_pool = GlobalAveragePooling1D()(input)
-        max_pool = GlobalMaxPooling1D()(input)
+        if self.top_k > 1:
+            max_pool = Lambda(self._top_k)(input)
+        else:
+            max_pool = GlobalMaxPooling1D()(input)
         conc = concatenate([avg_pool, max_pool])
         return conc
 
@@ -151,6 +169,49 @@ class CNN_Model:
         return conc
 
 
+    def full_connect_layer(self, input):
+        full_connect = Dense(self.hidden_dim[0], activation = 'relu')(input)
+        if self.full_connect_dropout > 0:
+            full_connect = Dropout(self.full_connect_dropout)(full_connect)
+        if self.resnet_hn:
+            full_connect = concatenate([full_connect, input], axis = 1)
+        return full_connect
+
+
+    def ConvBlock(self, x, filter_size):
+        kernel1_maps = Conv1D(filters = filter_size, kernel_size = 1, activation = 'linear')(x)
+        kernel1_maps_act = self.act_blend(kernel1_maps)
+        kernel1_conc = self.pooling_blend(kernel1_maps_act)
+
+        kernel2_maps = Conv1D(filters = filter_size, kernel_size = 2, activation = 'linear')(x)
+        kernel2_maps_act = self.act_blend(kernel2_maps)
+        kernel2_conc = self.pooling_blend(kernel2_maps_act)
+
+        kernel3_maps = Conv1D(filters = filter_size, kernel_size = 3, activation = 'linear')(x)
+        kernel3_maps_act = self.act_blend(kernel3_maps)
+        kernel3_conc = self.pooling_blend(kernel3_maps_act)
+
+        kernel4_maps = Conv1D(filters = filter_size, kernel_size = 4, activation = 'linear')(x)
+        kernel4_maps_act = self.act_blend(kernel4_maps)
+        kernel4_conc = self.pooling_blend(kernel4_maps_act)
+
+        kernel5_maps = Conv1D(filters = filter_size, kernel_size = 5, activation = 'linear')(x)
+        kernel5_maps_act = self.act_blend(kernel5_maps)
+        kernel5_conc = self.pooling_blend(kernel5_maps_act)
+
+        kernel6_maps = Conv1D(filters = filter_size, kernel_size = 6, activation = 'linear')(x)
+        kernel6_maps_act = self.act_blend(kernel6_maps)
+        kernel6_conc = self.pooling_blend(kernel6_maps_act)
+
+        kernel7_maps = Conv1D(filters = filter_size, kernel_size = 7, activation = 'linear')(x)
+        kernel7_maps_act = self.act_blend(kernel7_maps)
+        kernel7_conc = self.pooling_blend(kernel7_maps_act)
+
+        conc = concatenate([kernel1_conc, kernel2_conc, kernel3_conc, kernel4_conc, \
+                    kernel5_conc, kernel6_conc, kernel7_conc], axis = 1)
+        return conc
+
+
     def Create_CNN(self):
         """
         """
@@ -159,57 +220,55 @@ class CNN_Model:
         x = embedding(inp)
         if self.emb_dropout > 0:
             x = SpatialDropout1D(self.emb_dropout)(x)
-        if self.context_vector_dim > 0:
-            rnn_maps = Bidirectional(GRU(self.context_vector_dim, return_sequences=True))(x)
-            rnn_conc = self.pooling_blend(rnn_maps)
         # x = Reshape(())
         # x = SpatialDropout1D(0.2)(x)
+        have_cnn = False
+        have_rnn = False
+        for i in range(len(self.filter_size)):
+            if self.filter_size[i] > 0:
+                conc = self.ConvBlock(x, self.filter_size[i])
+                have_cnn = True
+                if i == 0:
+                    cnn_conc = conc
+                else:
+                    cnn_conc = concatenate([conc, cnn_conc], axis = 1)
 
-        kernel1_maps = Conv1D(filters = self.filter_size, kernel_size = 1, activation = 'linear')(x)
-        kernel1_maps_act = self.act_blend(kernel1_maps)
-        kernel1_conc = self.pooling_blend(kernel1_maps_act)
+        for i in range(len(self.context_vector_dim)):
+            if self.context_vector_dim[i] > 0:
+                rnn_maps = Bidirectional(GRU(self.context_vector_dim[i], return_sequences=True))(x)
+                conc = self.pooling_blend(rnn_maps)
+                have_rnn = True
+                if i == 0:
+                    rnn_conc = conc
+                else:
+                    rnn_conc = concatenate([conc, rnn_conc], axis = 1)
 
-        kernel2_maps = Conv1D(filters = self.filter_size, kernel_size = 2, activation = 'linear')(x)
-        kernel2_maps_act = self.act_blend(kernel2_maps)
-        kernel2_conc = self.pooling_blend(kernel2_maps_act)
-
-        kernel3_maps = Conv1D(filters = self.filter_size, kernel_size = 3, activation = 'linear')(x)
-        kernel3_maps_act = self.act_blend(kernel3_maps)
-        kernel3_conc = self.pooling_blend(kernel3_maps_act)
-
-        kernel4_maps = Conv1D(filters = self.filter_size, kernel_size = 4, activation = 'linear')(x)
-        kernel4_maps_act = self.act_blend(kernel4_maps)
-        kernel4_conc = self.pooling_blend(kernel4_maps_act)
-
-        kernel5_maps = Conv1D(filters = self.filter_size, kernel_size = 5, activation = 'linear')(x)
-        kernel5_maps_act = self.act_blend(kernel5_maps)
-        kernel5_conc = self.pooling_blend(kernel5_maps_act)
-
-        kernel6_maps = Conv1D(filters = self.filter_size, kernel_size = 6, activation = 'linear')(x)
-        kernel6_maps_act = self.act_blend(kernel6_maps)
-        kernel6_conc = self.pooling_blend(kernel6_maps_act)
-
-        kernel7_maps = Conv1D(filters = self.filter_size, kernel_size = 7, activation = 'linear')(x)
-        kernel7_maps_act = self.act_blend(kernel7_maps)
-        kernel7_conc = self.pooling_blend(kernel7_maps_act)
-
-        conc = concatenate([kernel1_conc, kernel2_conc, kernel3_conc, kernel4_conc, \
-                    kernel5_conc, kernel6_conc, kernel7_conc], axis = 1)
-        if self.context_vector_dim > 0:
-            conc = concatenate([conc, rnn_conc], axis = 1)
+        if have_cnn and have_rnn:
+            conc = concatenate([cnn_conc, rnn_conc], axis = 1)
+        elif have_rnn:
+            conc = rnn_conc
+        elif have_cnn:
+            conc = cnn_conc
 
         # conc = self.pooling_blend(x)
-        if self.hidden_dim[0] > 0:
-            full_connect = Dense(self.hidden_dim[0], activation = 'relu')(conc)
-            if self.full_connect_dropout > 0:
-                full_connect = Dropout(self.full_connect_dropout)(full_connect)
+        if self.separate_label_layer:
+            for i in range(self.num_classes):
+                full_connect = self.full_connect_layer(conc)
+                proba = Dense(1, activation="sigmoid")(full_connect)
+                if i == 0:
+                    outp = proba
+                else:
+                    outp = concatenate([outp, proba], axis = 1)
         else:
-            full_connect = conc
-        # full_conv_0 = self.act_blend(full_conv_pre_act_0)
-        # full_conv_pre_act_1 = Dense(self.hidden_dim[1])(full_conv_0)
-        # full_conv_1 = self.act_blend(full_conv_pre_act_1)
-        # flat = Flatten()(conc)
-        outp = Dense(6, activation="sigmoid")(full_connect)
+            if self.hidden_dim[0] > 0:
+                full_connect = self.full_connect_layer(conc)
+            else:
+                full_connect = conc
+            # full_conv_0 = self.act_blend(full_conv_pre_act_0)
+            # full_conv_pre_act_1 = Dense(self.hidden_dim[1])(full_conv_0)
+            # full_conv_1 = self.act_blend(full_conv_pre_act_1)
+            # flat = Flatten()(conc)
+            outp = Dense(6, activation="sigmoid")(full_connect)
 
         model = Model(inputs = inp, outputs = outp)
         # print (model.summary())
@@ -279,7 +338,8 @@ class CNN_Model:
 
         callbacks = [
                 EarlyStopping(monitor='val_loss', patience=3, verbose=0),
-                RocAucEvaluation(validation_data=(valide_part, valide_part_label), interval=1, batch_interval = self.batch_interval)
+                RocAucEvaluation(validation_data=(valide_part, valide_part_label), interval=1, \
+                    batch_interval = self.batch_interval, scores = self.scores)
                 ]
 
         self.model.fit(train_part, train_part_label, batch_size=self.batch_size, epochs=self.epochs,

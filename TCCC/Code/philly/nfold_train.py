@@ -17,7 +17,7 @@ RCNN_HIDDEN_UNIT = [128, 64]
 def nfold_train(train_data, train_label, model_types = None,
             stacking = False, valide_data = None, valide_label = None,
             test_data = None, train_weight = None, valide_weight = None, 
-            flags = None ,tokenizer = None):
+            flags = None ,tokenizer = None, scores = None):
     """
     nfold Training
     """
@@ -34,7 +34,7 @@ def nfold_train(train_data, train_label, model_types = None,
     models = []
     embedding_weight = None 
     if flags.load_wv_model:
-        embedding_weight = get_word2vec_embedding(location = flags.input_training_data_path + '/wiki.en.vec.indata', \
+        embedding_weight = get_word2vec_embedding(location = flags.input_training_data_path + flags.wv_model_file, \
                  tokenizer = tokenizer, nb_words = flags.vocab_size, embed_size = flags.emb_dim, \
                  model_type = flags.wv_model_type)
     for train_index, test_index in kf.split(train_data):
@@ -78,19 +78,22 @@ def nfold_train(train_data, train_label, model_types = None,
                 print(model.model.summary())
                 onefold_models.append((model, 'rcnn'))
             elif model_type == 'rnn':
-                model = RNN_Model(max_token = MAX_NUM_WORDS, num_classes = 2, context_vector_dim = LSTM_UNIT, \
+                model = RNN_Model(max_token = MAX_NUM_WORDS, num_classes = 6, context_vector_dim = LSTM_UNIT, \
                         hidden_dim = RCNN_HIDDEN_UNIT, max_len = MAX_SEQUENCE_LEN, embedding_dim = RNN_EMBEDDING_DIM)
                 model.train(train_part, train_part_label, valide_part, valide_part_label)
                 # print(model.model.summary())
                 onefold_models.append((model, 'rnn'))
             elif model_type == 'cnn':
-                model = CNN_Model(max_token = flags.vocab_size, num_classes = 2, context_vector_dim = flags.rnn_unit, \
+                model = CNN_Model(max_token = flags.vocab_size, num_classes = 6, \
+                        context_vector_dim = [int(hn.strip()) for hn in flags.rnn_unit.strip().split(',')], \
                         hidden_dim = [int(hn.strip()) for hn in flags.full_connect_hn.strip().split(',')], \
                         max_len = flags.max_seq_len, embedding_dim = flags.emb_dim, tokenizer = tokenizer, \
                         embedding_weight = embedding_weight, batch_size = flags.batch_size, epochs = flags.epochs, \
-                        filter_size = flags.filter_size, fix_wv_model = flags.fix_wv_model, \
+                        filter_size = [int(hn.strip()) for hn in flags.filter_size.strip().split(',')], \
+                        fix_wv_model = flags.fix_wv_model, \
                         batch_interval = flags.batch_interval, emb_dropout = flags.emb_dropout, \
-                        full_connect_dropout = flags.full_connect_dropout)
+                        full_connect_dropout = flags.full_connect_dropout, separate_label_layer = flags.separate_label_layer, \
+                        scores = scores, resnet_hn = flags.resnet_hn, top_k = flags.vdcc_top_k)
                 if num_fold == 0:
                     print(model.model.summary())
                 model.train(train_part, train_part_label, valide_part, valide_part_label)
