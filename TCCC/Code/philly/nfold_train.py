@@ -93,7 +93,7 @@ def nfold_train(train_data, train_label, model_types = None,
                         fix_wv_model = flags.fix_wv_model, \
                         batch_interval = flags.batch_interval, emb_dropout = flags.emb_dropout, \
                         full_connect_dropout = flags.full_connect_dropout, separate_label_layer = flags.separate_label_layer, \
-                        scores = scores, resnet_hn = flags.resnet_hn, top_k = flags.vdcc_top_k)
+                        scores = scores, resnet_hn = flags.resnet_hn, top_k = flags.vdcc_top_k, char_split = flags.char_split)
                 if num_fold == 0:
                     print(model.model.summary())
                 model.train(train_part, train_part_label, valide_part, valide_part_label)

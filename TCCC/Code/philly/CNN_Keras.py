@@ -104,7 +104,7 @@ class CNN_Model:
     """
     def __init__(self, max_token, num_classes, context_vector_dim, hidden_dim, max_len, embedding_dim, \
                 tokenizer, embedding_weight, batch_size, epochs, filter_size, fix_wv_model, batch_interval, \
-                emb_dropout, full_connect_dropout, separate_label_layer, scores, resnet_hn, top_k):
+                emb_dropout, full_connect_dropout, separate_label_layer, scores, resnet_hn, top_k, char_split):
         self.num_classes = num_classes
         self.context_vector_dim = context_vector_dim
         self.hidden_dim = hidden_dim
@@ -124,6 +124,7 @@ class CNN_Model:
         self.scores = scores
         self.resnet_hn = resnet_hn
         self.top_k = top_k
+        self.char_split = char_split
         self.model = self.Create_CNN()
         # self.model = vdcnn.build_model(num_filters = [64, 128, 256], sequence_max_length = self.max_len)
 
@@ -216,10 +217,17 @@ class CNN_Model:
         """
         """
         inp = Input(shape=(self.max_len, ))
-        embedding = Embedding(self.max_token, self.embedding_dim, weights=[self.embedding_weight], trainable=not self.fix_wv_model)
+        if not self.char_split:
+            embedding = Embedding(self.max_token, self.embedding_dim, weights=[self.embedding_weight], trainable=not self.fix_wv_model)
+        else:
+            embedding = Embedding(self.max_token, self.embedding_dim)
         x = embedding(inp)
         if self.emb_dropout > 0:
             x = SpatialDropout1D(self.emb_dropout)(x)
+        if self.char_split:
+            # First conv layer
+            x = Conv1D(filters=128, kernel_size=3, strides=2, padding="same")(x)
+
         # x = Reshape(())
         # x = SpatialDropout1D(0.2)(x)
         have_cnn = False
