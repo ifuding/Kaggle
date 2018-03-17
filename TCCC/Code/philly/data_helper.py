@@ -7,7 +7,9 @@ class data_helper():
 				wv_model_path, 
 				# load_wv_model, 
 				# model_type, 
-				sequence_max_length=1024):
+				sequence_max_length=1024,
+				letter_num = 3,
+				emb_dim = 300):
 		self.alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789-,;.!?:’"/|_#$%ˆ&*˜‘+=<>()[]{} '
 		self.char_dict = {}
 		self.sequence_max_length = sequence_max_length
@@ -16,6 +18,8 @@ class data_helper():
 			self.char_dict[c] = i+1
 		self.wv_model_path = wv_model_path
 		self.filters = '!"#$%&()*+,-./:;<=>?@[\\]^_`{|}~\t\n'
+		self.letter_num = letter_num
+		self.emb_dim = emb_dim
 		# self.load_wv_model = load_wv_model
 		# self.model_type = model_type
 
@@ -65,29 +69,29 @@ class data_helper():
 		"""
 		"""
 		print("-----Load Corpus-----")
-		wv_model = self.load_wv_model()
+		wv_model = dict() #self.load_wv_model()
 		triletter_seqes = []
 		triletter_vocab = {}
 		triletter_vocab_size = 1	#pad triletter
 		triletter_emb = []
-		triletter_emb.append(np.zeros(300))	#pad triletter
+		triletter_emb.append(np.zeros(self.emb_dim))	#pad triletter
 		seq_lens = []	# for debug
 		triletter_in_fasttext = 0
 		for line in text:
 			line = '*' + line.lower().translate(self.filters) + '*'
 			triletter_seq = np.zeros(self.sequence_max_length) # default pad triletter
 			seq_index = 0
-			for i in range(0, len(line), 3):
+			for i in range(0, len(line), self.letter_num):
 				if seq_index >= self.sequence_max_length:
 					break
-				triletter = line[i:min(i + 3, len(line))]
+				triletter = line[i:min(i + self.letter_num, len(line))]
 				if triletter not in triletter_vocab:
 					# A new triletter
 					triletter_vocab[triletter] = triletter_vocab_size
 					triletter_seq[seq_index] = triletter_vocab_size
 					triletter_vocab_size += 1
 					if triletter not in wv_model:
-						triletter_emb.append(np.zeros(300))
+						triletter_emb.append(np.zeros(self.emb_dim))
 					else:
 						triletter_emb.append(wv_model[triletter])
 						triletter_in_fasttext += 1

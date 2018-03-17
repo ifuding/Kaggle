@@ -48,6 +48,7 @@ flags.DEFINE_integer('vdcc_top_k', 1, 'vdcc top_k')
 flags.DEFINE_bool("separate_label_layer", False, "Whether to separate label layer")
 flags.DEFINE_bool("stem", False, "Whether to stem")
 flags.DEFINE_bool("resnet_hn", False, "Whether to concatenate hn and rcnn")
+flags.DEFINE_integer('letter_num', 3, 'letter number to aggregate')
 FLAGS = flags.FLAGS
 
 train = pd.read_csv(FLAGS.input_training_data_path + '/train.csv')
@@ -121,7 +122,9 @@ if not FLAGS.char_split:
     data = pad_sequences(data, maxlen = FLAGS.max_seq_len)
 else:
     tokenizer = None
-    data_helper = data_helper(sequence_max_length = FLAGS.max_seq_len, wv_model_path = FLAGS.input_training_data_path + FLAGS.wv_model_file)
+    data_helper = data_helper(sequence_max_length = FLAGS.max_seq_len, \
+            wv_model_path = FLAGS.input_training_data_path + FLAGS.wv_model_file, \
+            letter_num = FLAGS.letter_num, emb_dim = FLAGS.emb_dim)
     data, emb_weight, FLAGS.vocab_size = data_helper.text_to_triletter_sequence(data)
 # print(data[:2])
 # exit(0)
