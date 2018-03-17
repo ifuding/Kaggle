@@ -5,7 +5,7 @@ import random
 class data_helper():
 	def __init__(self, 
 				wv_model_path, 
-				# load_wv_model, 
+				load_wv_model, 
 				# model_type, 
 				sequence_max_length=1024,
 				letter_num = 3,
@@ -20,7 +20,7 @@ class data_helper():
 		self.filters = '!"#$%&()*+,-./:;<=>?@[\\]^_`{|}~\t\n'
 		self.letter_num = letter_num
 		self.emb_dim = emb_dim
-		# self.load_wv_model = load_wv_model
+		self._load_wv_model = load_wv_model
 		# self.model_type = model_type
 
 
@@ -69,12 +69,16 @@ class data_helper():
 		"""
 		"""
 		print("-----Load Corpus-----")
-		wv_model = dict() #self.load_wv_model()
+		if self._load_wv_model:
+			wv_model = self.load_wv_model()
+		else:
+    		wv_model = dict()
 		triletter_seqes = []
 		triletter_vocab = {}
 		triletter_vocab_size = 1	#pad triletter
 		triletter_emb = []
-		triletter_emb.append(np.zeros(self.emb_dim))	#pad triletter
+		if _load_wv_model:
+			triletter_emb.append(np.random.uniform(0, 1, self.emb_dim))	#pad triletter
 		seq_lens = []	# for debug
 		triletter_in_fasttext = 0
 		for line in text:
@@ -90,16 +94,19 @@ class data_helper():
 					triletter_vocab[triletter] = triletter_vocab_size
 					triletter_seq[seq_index] = triletter_vocab_size
 					triletter_vocab_size += 1
-					if triletter not in wv_model:
-						triletter_emb.append(np.zeros(self.emb_dim))
-					else:
-						triletter_emb.append(wv_model[triletter])
-						triletter_in_fasttext += 1
+					if _load_wv_model:
+						if triletter not in wv_model:
+							triletter_emb.append(np.random.uniform(0, 1, self.emb_dim))
+						else:
+							triletter_emb.append(wv_model[triletter])
+							triletter_in_fasttext += 1
 				else:
 					triletter_seq[seq_index] = triletter_vocab[triletter]
 				seq_index += 1
 			seq_lens.append(seq_index)
 			triletter_seqes.append(triletter_seq)
+		if _load_wv_model:
+			triletter_emb = np.random.uniform(0, 1, (triletter_vocab_size, self.emb_dim))
 		seq_lens = np.array(seq_lens)
 		print("seq_len min:{0} max:{1} mean:{2} std:{3} median:{4}".format(  \
 			np.min(seq_lens), np.max(seq_lens), np.mean(seq_lens), np.std(seq_lens), np.median(seq_lens)))
