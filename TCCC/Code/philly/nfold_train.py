@@ -32,13 +32,12 @@ def nfold_train(train_data, train_label, model_types = None,
     test_preds = None
     num_fold = 0
     models = []
-    embedding_weight = None 
-    if flags.load_wv_model:
-        embedding_weight = get_word2vec_embedding(location = flags.input_training_data_path + flags.wv_model_file, \
-                 tokenizer = tokenizer, nb_words = flags.vocab_size, embed_size = flags.emb_dim, \
-                 model_type = flags.wv_model_type)
-    else:
-        embedding_weight = emb_weight
+    # if flags.load_wv_model:
+    #     embedding_weight = get_word2vec_embedding(location = flags.input_training_data_path + flags.wv_model_file, \
+    #              tokenizer = tokenizer, nb_words = flags.vocab_size, embed_size = flags.emb_dim, \
+    #              model_type = flags.wv_model_type)
+    # else:
+    embedding_weight = emb_weight
     for train_index, test_index in kf.split(train_data):
         print('fold: %d th train :-)' % (num_fold))
         print('Train size: {} Valide size: {}'.format(train_index.shape[0], test_index.shape[0]))

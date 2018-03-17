@@ -124,7 +124,7 @@ else:
     tokenizer = None
     data_helper = data_helper(sequence_max_length = FLAGS.max_seq_len, \
             wv_model_path = FLAGS.input_training_data_path + FLAGS.wv_model_file, \
-            letter_num = FLAGS.letter_num, emb_dim = FLAGS.emb_dim)
+            letter_num = FLAGS.letter_num, emb_dim = FLAGS.emb_dim, load_wv_model = FLAGS.load_wv_model)
     data, emb_weight, FLAGS.vocab_size = data_helper.text_to_triletter_sequence(data)
 # print(data[:2])
 # exit(0)
