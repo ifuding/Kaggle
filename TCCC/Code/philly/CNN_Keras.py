@@ -171,11 +171,13 @@ class CNN_Model:
 
 
     def full_connect_layer(self, input):
-        full_connect = Dense(self.hidden_dim[0], activation = 'relu')(input)
-        if self.full_connect_dropout > 0:
-            full_connect = Dropout(self.full_connect_dropout)(full_connect)
-        if self.resnet_hn:
-            full_connect = concatenate([full_connect, input], axis = 1)
+        full_connect = input
+        for hn in self.hidden_dim:
+            full_connect = Dense(hn, activation = 'relu')(full_connect)
+            if self.full_connect_dropout > 0:
+                full_connect = Dropout(self.full_connect_dropout)(full_connect)
+            if self.resnet_hn:
+                full_connect = concatenate([full_connect, input], axis = 1)
         return full_connect
 
 
