@@ -17,7 +17,7 @@ RCNN_HIDDEN_UNIT = [128, 64]
 def nfold_train(train_data, train_label, model_types = None,
             stacking = False, valide_data = None, valide_label = None,
             test_data = None, train_weight = None, valide_weight = None, 
-            flags = None ,tokenizer = None, scores = None):
+            flags = None ,tokenizer = None, scores = None, emb_weight = None):
     """
     nfold Training
     """
@@ -37,6 +37,8 @@ def nfold_train(train_data, train_label, model_types = None,
         embedding_weight = get_word2vec_embedding(location = flags.input_training_data_path + flags.wv_model_file, \
                  tokenizer = tokenizer, nb_words = flags.vocab_size, embed_size = flags.emb_dim, \
                  model_type = flags.wv_model_type)
+    else:
+        embedding_weight = emb_weight
     for train_index, test_index in kf.split(train_data):
         print('fold: %d th train :-)' % (num_fold))
         print('Train size: {} Valide size: {}'.format(train_index.shape[0], test_index.shape[0]))

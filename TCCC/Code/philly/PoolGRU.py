@@ -121,8 +121,8 @@ if not FLAGS.char_split:
     data = pad_sequences(data, maxlen = FLAGS.max_seq_len)
 else:
     tokenizer = None
-    data_helper = data_helper(sequence_max_length = FLAGS.max_seq_len)
-    data = data_helper.text2sequence(data)
+    data_helper = data_helper(sequence_max_length = FLAGS.max_seq_len, wv_model_path = FLAGS.input_training_data_path + FLAGS.wv_model_file)
+    data, emb_weight, FLAGS.vocab_size = data_helper.text_to_triletter_sequence(data)
 # print(data[:2])
 # exit(0)
 # svd_name = "token_sequence" + strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) + ".npy"
@@ -137,7 +137,7 @@ multi_label_models = []
 scores_text = []
 sub2 = pd.DataFrame(np.zeros((test.shape[0], len(coly))), columns = coly)
 models, _, _, _ = nfold_train(train_data, train_label, flags = FLAGS, model_types = [FLAGS.model_type], \
-            tokenizer = tokenizer, scores = scores_text) #, valide_data = train_data, valide_label = train_label)
+            tokenizer = tokenizer, scores = scores_text, emb_weight = emb_weight) #, valide_data = train_data, valide_label = train_label)
 # exit(0)
 # for c in coly:
 #     print("------Label: {0}".format(c))

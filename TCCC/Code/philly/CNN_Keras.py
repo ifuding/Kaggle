@@ -219,16 +219,13 @@ class CNN_Model:
         """
         """
         inp = Input(shape=(self.max_len, ))
-        if not self.char_split:
-            embedding = Embedding(self.max_token, self.embedding_dim, weights=[self.embedding_weight], trainable=not self.fix_wv_model)
-        else:
-            embedding = Embedding(self.max_token, self.embedding_dim)
+        embedding = Embedding(self.max_token, self.embedding_dim, weights=[self.embedding_weight], trainable=not self.fix_wv_model)
         x = embedding(inp)
         if self.emb_dropout > 0:
             x = SpatialDropout1D(self.emb_dropout)(x)
-        if self.char_split:
-            # First conv layer
-            x = Conv1D(filters=128, kernel_size=3, strides=2, padding="same")(x)
+        # if self.char_split:
+        #     # First conv layer
+        #     x = Conv1D(filters=128, kernel_size=3, strides=2, padding="same")(x)
 
         # x = Reshape(())
         # x = SpatialDropout1D(0.2)(x)

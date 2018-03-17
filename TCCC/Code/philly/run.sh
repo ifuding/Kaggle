@@ -1,10 +1,11 @@
 #! /bin/bash
 
 python3 PoolGRU.py --input-training-data-path ../../Data/ --output-model-path . --model_type cnn \
-        --max_seq_len 1024 --nfold 10 --emb_dim 64 --epochs 2 --batch_size 256 --ensemble_nfold 2 \
-        --filter_size 0,0 --batch_interval 1000000 --full_connect_dropout 0 --emb_dropout 0 \
-        --full_connect_hn 16,0 --rnn_unit 8,16 --vocab_size 70 --separate_label_layer True --stem False \
-        --wv_model_file wiki.en.vec.indata -resnet_hn False --vdcc_top_k 1 --char_split True --load_wv_model False
+        --max_seq_len 256 --nfold 10 --emb_dim 300 --epochs 2 --batch_size 256 --ensemble_nfold 2 \
+        --filter_size 16,0 --batch_interval 1000000 --full_connect_dropout 0 --emb_dropout 0 \
+        --full_connect_hn 0,0 --rnn_unit 0 --vocab_size 70 --separate_label_layer False --stem False \
+        --wv_model_file wiki.en.vec.indata -resnet_hn False --vdcc_top_k 1 --char_split True --load_wv_model False \
+        --fix_wv_model False
 
 # python3 PoolGRU.py --input-training-data-path ../../Data/ --output-model-path . --model_type vdcnn \
 #         --max_seq_len 100 --nfold 2 --emb_dim 32 --epochs 2 --batch_size 128 --ensemble_nfold 1 \
