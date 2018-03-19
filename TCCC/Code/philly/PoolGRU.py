@@ -57,138 +57,107 @@ flags.DEFINE_bool("stacking", False, "Whether to stacking")
 flags.DEFINE_bool("uniform_init_emb", False, "Whether to uniform init the embedding")
 FLAGS = flags.FLAGS
 
-train = pd.read_csv(FLAGS.input_training_data_path + '/train.csv')
-test = pd.read_csv(FLAGS.input_training_data_path +  '/test.csv')
-# sub1 = pd.read_csv(data_dir + '/submission_ensemble.csv')
-nrow = train.shape[0]
-print("Train Size: {0}".format(nrow))
-print("Test Size: {0}".format(test.shape[0]))
 
-coly = [c for c in train.columns if c not in ['id','comment_text']]
-print("Label columns: {0}".format(coly))
-y = train[coly]
-tid = test['id'].values
+def load_data():
+    train = pd.read_csv(FLAGS.input_training_data_path + '/train.csv')
+    test = pd.read_csv(FLAGS.input_training_data_path +  '/test.csv')
+    # sub1 = pd.read_csv(data_dir + '/submission_ensemble.csv')
+    nrow = train.shape[0]
+    print("Train Size: {0}".format(nrow))
+    print("Test Size: {0}".format(test.shape[0]))
 
-# train['polarity'] = train['comment_text'].map(lambda x: int(TextBlob(x).sentiment.polarity * 10))
-# test['polarity'] = test['comment_text'].map(lambda x: int(TextBlob(x).sentiment.polarity * 10))
+    coly = [c for c in train.columns if c not in ['id','comment_text']]
+    print("Label columns: {0}".format(coly))
+    y = train[coly]
+    tid = test['id'].values
 
-# train['comment_text'] = train.apply(lambda r: str(r['comment_text']) + ' polarity' +  zsign[np.sign(r['polarity'])] + zpolarity[np.abs(r['polarity'])], axis=1)
-# test['comment_text'] = test.apply(lambda r: str(r['comment_text']) + ' polarity' +  zsign[np.sign(r['polarity'])] + zpolarity[np.abs(r['polarity'])], axis=1)
+    df = pd.concat([train['comment_text'], test['comment_text']], axis=0)
+    df = df.fillna("unknown")
 
-df = pd.concat([train['comment_text'], test['comment_text']], axis=0)
-# print(type(df))
-# df_len = df.map(lambda x: len(x))
-# print ("min: {0} max: {1} median: {2} mean: {3} std: {4}".format(df_len.min(), df_len.max(), df_len.median(), df_len.mean(), df_len.std()))
-# exit(0)
-df = df.fillna("unknown")
-
-# print('Pipeline...')
-# fp = pipeline.Pipeline([
-#    ('union', pipeline.FeatureUnion(
-#        n_jobs = -1,
-#        transformer_list = [
-#            ('pi1', pipeline.Pipeline([('count_comment_text', \
-#                 feature_extraction.text.TfidfVectorizer(stop_words='english', analyzer=u'char', ngram_range=(2, 8), max_features=50000)), \
-#                 ('tsvd1', decomposition.TruncatedSVD(n_components=128, n_iter=25, random_state=12))])
-#                 ),
-#            ('pi2', pipeline.Pipeline([('tfidf_Text', \
-#                 feature_extraction.text.TfidfVectorizer(stop_words='english', ngram_range=(1, 3), max_features=50000)), \
-#                 ('tsvd2', decomposition.TruncatedSVD(n_components=128, n_iter=25, random_state=12))])
-#                 )
-#        ])
-#    )])
-
-# data = fp.fit_transform(df)
-# svd_name = "svd" + strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) + ".npy"
-# np.save(svd_name, data)
-# data = np.load('svd_2018_03_01_16_33_00.npy')
-data = df.values
-# Text to sequence
-@contextmanager
-def timer(name):
-    """
-    Taken from Konstantin Lopuhin https://www.kaggle.com/lopuhin
-    in script named : Mercari Golf: 0.3875 CV in 75 LOC, 1900 s
-    https://www.kaggle.com/lopuhin/mercari-golf-0-3875-cv-in-75-loc-1900-s
-    """
-    t0 = time.time()
-    yield
-    print('[{0}] done in {1} s'.format(name, time.time() - t0))
+    data = df.values
+    # Text to sequence
+    @contextmanager
+    def timer(name):
+        """
+        Taken from Konstantin Lopuhin https://www.kaggle.com/lopuhin
+        in script named : Mercari Golf: 0.3875 CV in 75 LOC, 1900 s
+        https://www.kaggle.com/lopuhin/mercari-golf-0-3875-cv-in-75-loc-1900-s
+        """
+        t0 = time.time()
+        yield
+        print('[{0}] done in {1} s'.format(name, time.time() - t0))
 
 
-with timer("Performing stemming"):
-    if FLAGS.stem:
-        # stem_sentence = lambda s: " ".join(ps.stem(word) for word in s.strip().split())
-        data = [gensim.parsing.stem_text(comment) for comment in data]
-print('Tokenizer...')
-if not FLAGS.char_split:
-    tokenizer = Tokenizer(num_words = FLAGS.vocab_size)
-    tokenizer.fit_on_texts(data)
-    data = tokenizer.texts_to_sequences(data)
-    data = pad_sequences(data, maxlen = FLAGS.max_seq_len)
-    if FLAGS.load_wv_model:
-        emb_weight = get_word2vec_embedding(location = FLAGS.input_training_data_path + FLAGS.wv_model_file, \
-                 tokenizer = tokenizer, nb_words = FLAGS.vocab_size, embed_size = FLAGS.emb_dim, \
-                 model_type = FLAGS.wv_model_type, uniform_init_emb = FLAGS.uniform_init_emb)
-    else:
-        if FLAGS.uniform_init_emb:
-            emb_weight = np.random.uniform(0, 1, (FLAGS.vocab_size, FLAGS.emb_dim))
+    with timer("Performing stemming"):
+        if FLAGS.stem:
+            # stem_sentence = lambda s: " ".join(ps.stem(word) for word in s.strip().split())
+            data = [gensim.parsing.stem_text(comment) for comment in data]
+    print('Tokenizer...')
+    if not FLAGS.char_split:
+        tokenizer = Tokenizer(num_words = FLAGS.vocab_size)
+        tokenizer.fit_on_texts(data)
+        data = tokenizer.texts_to_sequences(data)
+        data = pad_sequences(data, maxlen = FLAGS.max_seq_len)
+        if FLAGS.load_wv_model:
+            emb_weight = get_word2vec_embedding(location = FLAGS.input_training_data_path + FLAGS.wv_model_file, \
+                    tokenizer = tokenizer, nb_words = FLAGS.vocab_size, embed_size = FLAGS.emb_dim, \
+                    model_type = FLAGS.wv_model_type, uniform_init_emb = FLAGS.uniform_init_emb)
         else:
-            emb_weight = np.zeros((FLAGS.vocab_size, FLAGS.emb_dim))
-else:
-    tokenizer = None
-    data_helper = data_helper(sequence_max_length = FLAGS.max_seq_len, \
-            wv_model_path = FLAGS.input_training_data_path + FLAGS.wv_model_file, \
-            letter_num = FLAGS.letter_num, emb_dim = FLAGS.emb_dim, load_wv_model = FLAGS.load_wv_model)
-    data, emb_weight, FLAGS.vocab_size = data_helper.text_to_triletter_sequence(data)
-# print(data[:2])
-# exit(0)
-# svd_name = "token_sequence" + strftime('_%Y_%m_%d_%H_%M_%S', gmtime()) + ".npy"
-# np.save(svd_name, data)
-# data = np.load('token_sequence_2018_03_04_15_50_25.npy')
+            if FLAGS.uniform_init_emb:
+                emb_weight = np.random.uniform(0, 1, (FLAGS.vocab_size, FLAGS.emb_dim))
+            else:
+                emb_weight = np.zeros((FLAGS.vocab_size, FLAGS.emb_dim))
+    else:
+        tokenizer = None
+        data_helper = data_helper(sequence_max_length = FLAGS.max_seq_len, \
+                wv_model_path = FLAGS.input_training_data_path + FLAGS.wv_model_file, \
+                letter_num = FLAGS.letter_num, emb_dim = FLAGS.emb_dim, load_wv_model = FLAGS.load_wv_model)
+        data, emb_weight, FLAGS.vocab_size = data_helper.text_to_triletter_sequence(data)
 
-train_data, train_label = data[:nrow], y.values[:nrow]
-test_data = data[nrow:]
+    train_data, train_label = data[:nrow], y.values[:nrow]
+    test_data = data[nrow:]
 
 
-print("Training------")
-multi_label_models = []
-scores_text = []
-sub2 = pd.DataFrame(np.zeros((test.shape[0], len(coly))), columns = coly)
-models, stacking_data, stacking_label, stacking_test_data = nfold_train(train_data, train_label, flags = FLAGS, model_types = [FLAGS.model_type], \
-            tokenizer = tokenizer, scores = scores_text, emb_weight = emb_weight, test_data = test_data) 
-            #, valide_data = train_data, valide_label = train_label)
+def sub(mdoels, stacking_data, stacking_label, stacking_test_data, FLAGS):
+    tmp_model_dir = "./model_dir/"
+    if not os.path.isdir(tmp_model_dir):
+        os.makedirs(tmp_model_dir, exist_ok=True)
+    if FLAGS.stacking:
+        np.save(os.path.join(tmp_model_dir, "stacking_train_data.npy"), stacking_data)
+        np.save(os.path.join(tmp_model_dir, "stacking_train_label.npy"), stacking_label)
+        np.save(os.path.join(tmp_model_dir, "stacking_test_data.npy"), stacking_test_data)
+    else:
+        sub2[coly] = models_eval(models, test_data)
+        sub2['id'] = tid
+        for c in coly:
+            sub2[c] = sub2[c].clip(0+1e12, 1-1e12)
+        blend = sub2 #blend[sub2.columns]
+        time_label = strftime('_%Y_%m_%d_%H_%M_%S', gmtime())
+        sub_name = tmp_model_dir + "sub" + time_label + ".csv"
+        blend.to_csv(sub_name, index=False)
 
-tmp_model_dir = "./model_dir/"
-if not os.path.isdir(tmp_model_dir):
-    os.makedirs(tmp_model_dir, exist_ok=True)
-if FLAGS.stacking:
-    np.save(os.path.join(tmp_model_dir, "stacking_train_data.npy"), stacking_data)
-    np.save(os.path.join(tmp_model_dir, "stacking_train_label.npy"), stacking_label)
-    np.save(os.path.join(tmp_model_dir, "stacking_test_data.npy"), stacking_test_data)
-else:
-    sub2[coly] = models_eval(models, test_data)
-    sub2['id'] = tid
-    for c in coly:
-        sub2[c] = sub2[c].clip(0+1e12, 1-1e12)
-    blend = sub2 #blend[sub2.columns]
-    time_label = strftime('_%Y_%m_%d_%H_%M_%S', gmtime())
-    sub_name = tmp_model_dir + "sub" + time_label + ".csv"
-    blend.to_csv(sub_name, index=False)
+        scores_text_frame = pd.DataFrame(scores_text, columns = ["score_text"])
+        score_text_file = tmp_model_dir + "score_text" + time_label + ".csv"
+        scores_text_frame.to_csv(score_text_file, index=False)
+        scores = scores_text_frame["score_text"]
+        for i in range(FLAGS.epochs):
+            scores_epoch = scores.loc[scores.str.startswith('epoch:{0}'.format(i + 1))].map(lambda s: float(s.split()[1]))
+            print ("Epoch{0} mean:{1} std:{2} min:{3} max:{4} median:{5}".format(i + 1, \
+                scores_epoch.mean(), scores_epoch.std(), scores_epoch.min(), scores_epoch.max(), scores_epoch.median()))
 
-    scores_text_frame = pd.DataFrame(scores_text, columns = ["score_text"])
-    score_text_file = tmp_model_dir + "score_text" + time_label + ".csv"
-    scores_text_frame.to_csv(score_text_file, index=False)
-    scores = scores_text_frame["score_text"]
-    for i in range(FLAGS.epochs):
-        scores_epoch = scores.loc[scores.str.startswith('epoch:{0}'.format(i + 1))].map(lambda s: float(s.split()[1]))
-        print ("Epoch{0} mean:{1} std:{2} min:{3} max:{4} median:{5}".format(i + 1, \
-            scores_epoch.mean(), scores_epoch.std(), scores_epoch.min(), scores_epoch.max(), scores_epoch.median()))
+    if not os.path.isdir(FLAGS.output_model_path):
+        os.makedirs(FLAGS.output_model_path, exist_ok=True)
+    for fileName in os.listdir(tmp_model_dir):
+        dst_file = os.path.join(FLAGS.output_model_path, fileName)
+        if os.path.exists(dst_file):
+            os.remove(dst_file)
+        shutil.move(os.path.join(tmp_model_dir, fileName), FLAGS.output_model_path)
 
-if not os.path.isdir(FLAGS.output_model_path):
-    os.makedirs(FLAGS.output_model_path, exist_ok=True)
-for fileName in os.listdir(tmp_model_dir):
-    dst_file = os.path.join(FLAGS.output_model_path, fileName)
-    if os.path.exists(dst_file):
-        os.remove(dst_file)
-    shutil.move(os.path.join(tmp_model_dir, fileName), FLAGS.output_model_path)
+if __name__ == "__main__":
+    print("Training------")
+    multi_label_models = []
+    scores_text = []
+    sub2 = pd.DataFrame(np.zeros((test.shape[0], len(coly))), columns = coly)
+    models, stacking_data, stacking_label, stacking_test_data = nfold_train(train_data, train_label, flags = FLAGS, model_types = [FLAGS.model_type], \
+                tokenizer = tokenizer, scores = scores_text, emb_weight = emb_weight, test_data = test_data) 
+                #, valide_data = train_data, valide_label = train_label)
