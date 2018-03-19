@@ -15,7 +15,7 @@ from tensorflow.python.keras import backend
 from tensorflow.python.keras.layers import Dense, Input, Lambda, LSTM, TimeDistributed, SimpleRNN, \
         GRU, Bidirectional, GlobalAveragePooling1D, GlobalMaxPooling1D, Activation, \
         SpatialDropout1D, Conv2D, Conv1D, Reshape, Flatten, AveragePooling2D, MaxPooling2D, Dropout, \
-        MaxPooling1D, AveragePooling1D, Embedding
+        MaxPooling1D, AveragePooling1D, Embedding, Concatenate
 from tensorflow.python.keras.layers import concatenate
 # from tensorflow.python.keras.layers.embeddings import Embedding
 from tensorflow.python.keras.models import Model
@@ -33,6 +33,7 @@ class RocAucEvaluation(Callback):
 
         self.interval = interval
         self.X_val, self.y_val = validation_data
+        print("y_val shape:{0}".format(self.y_val.shape))
         self.batch_interval = batch_interval
         self.verbose = verbose
         self.scores = scores
@@ -61,7 +62,7 @@ class MySentences(object):
 
 
 def get_word2vec_embedding(location = 'wv_model_norm.gensim', tokenizer = None, nb_words = 10000, \
-                embed_size = 300, model_type = "fast_text"):
+                embed_size = 300, model_type = "fast_text", uniform_init_emb = False):
     """Returns trained word2vec
 
     Args:
@@ -87,7 +88,10 @@ def get_word2vec_embedding(location = 'wv_model_norm.gensim', tokenizer = None, 
                     #     emb_file_indata.write(line)
                 wv_model[word] = np.asarray(ls[1:], dtype='float32')
     print("word_index size: {0}".format(len(word_index)))
-    embedding_matrix = np.zeros((nb_words, embed_size))
+    if uniform_init_emb:
+        embedding_matrix = np.random.uniform(0, 1, (nb_words, embed_size))
+    else:
+        embedding_matrix = np.zeros((nb_words, embed_size))
     word_in_corpus = 0
     for word, i in word_index.items():
         if i >= nb_words: continue
@@ -104,7 +108,8 @@ class CNN_Model:
     """
     def __init__(self, max_token, num_classes, context_vector_dim, hidden_dim, max_len, embedding_dim, \
                 tokenizer, embedding_weight, batch_size, epochs, filter_size, fix_wv_model, batch_interval, \
-                emb_dropout, full_connect_dropout, separate_label_layer, scores, resnet_hn, top_k, char_split):
+                emb_dropout, full_connect_dropout, separate_label_layer, scores, resnet_hn, top_k, char_split, \
+                kernel_size_list, rnn_input_dropout, rnn_state_dropout):
         self.num_classes = num_classes
         self.context_vector_dim = context_vector_dim
         self.hidden_dim = hidden_dim
@@ -125,6 +130,9 @@ class CNN_Model:
         self.resnet_hn = resnet_hn
         self.top_k = top_k
         self.char_split = char_split
+        self.kernel_size_list = kernel_size_list
+        self.rnn_input_dropout = rnn_input_dropout
+        self.rnn_state_dropout = rnn_state_dropout
         self.model = self.Create_CNN()
         # self.model = vdcnn.build_model(num_filters = [64, 128, 256], sequence_max_length = self.max_len)
 
@@ -182,37 +190,12 @@ class CNN_Model:
 
 
     def ConvBlock(self, x, filter_size):
-        kernel1_maps = Conv1D(filters = filter_size, kernel_size = 1, activation = 'linear')(x)
-        kernel1_maps_act = self.act_blend(kernel1_maps)
-        kernel1_conc = self.pooling_blend(kernel1_maps_act)
-
-        kernel2_maps = Conv1D(filters = filter_size, kernel_size = 2, activation = 'linear')(x)
-        kernel2_maps_act = self.act_blend(kernel2_maps)
-        kernel2_conc = self.pooling_blend(kernel2_maps_act)
-
-        kernel3_maps = Conv1D(filters = filter_size, kernel_size = 3, activation = 'linear')(x)
-        kernel3_maps_act = self.act_blend(kernel3_maps)
-        kernel3_conc = self.pooling_blend(kernel3_maps_act)
-
-        kernel4_maps = Conv1D(filters = filter_size, kernel_size = 4, activation = 'linear')(x)
-        kernel4_maps_act = self.act_blend(kernel4_maps)
-        kernel4_conc = self.pooling_blend(kernel4_maps_act)
-
-        kernel5_maps = Conv1D(filters = filter_size, kernel_size = 5, activation = 'linear')(x)
-        kernel5_maps_act = self.act_blend(kernel5_maps)
-        kernel5_conc = self.pooling_blend(kernel5_maps_act)
-
-        kernel6_maps = Conv1D(filters = filter_size, kernel_size = 6, activation = 'linear')(x)
-        kernel6_maps_act = self.act_blend(kernel6_maps)
-        kernel6_conc = self.pooling_blend(kernel6_maps_act)
-
-        kernel7_maps = Conv1D(filters = filter_size, kernel_size = 7, activation = 'linear')(x)
-        kernel7_maps_act = self.act_blend(kernel7_maps)
-        kernel7_conc = self.pooling_blend(kernel7_maps_act)
-
-        conc = concatenate([kernel1_conc, kernel2_conc, kernel3_conc, kernel4_conc, \
-                    kernel5_conc, kernel6_conc, kernel7_conc], axis = 1)
-        return conc
+        conc_list =[]
+        for kernel_size in self.kernel_size_list:
+            kernel_maps = Conv1D(filters = filter_size, kernel_size = kernel_size, activation = 'relu')(x)
+            kernel_conc = self.pooling_blend(kernel_maps)
+            conc_list.append(kernel_conc)
+        return concatenate(conc_list, axis = 1)
 
 
     def Create_CNN(self):
@@ -227,35 +210,20 @@ class CNN_Model:
         #     # First conv layer
         #     x = Conv1D(filters=128, kernel_size=3, strides=2, padding="same")(x)
 
-        # x = Reshape(())
-        # x = SpatialDropout1D(0.2)(x)
-        have_cnn = False
-        have_rnn = False
-        for i in range(len(self.filter_size)):
-            if self.filter_size[i] > 0:
-                conc = self.ConvBlock(x, self.filter_size[i])
-                have_cnn = True
-                if i == 0:
-                    cnn_conc = conc
-                else:
-                    cnn_conc = concatenate([conc, cnn_conc], axis = 1)
-
-        for i in range(len(self.context_vector_dim)):
-            if self.context_vector_dim[i] > 0:
-                rnn_maps = Bidirectional(GRU(self.context_vector_dim[i], return_sequences=True))(x)
+        cnn_list = []
+        rnn_list = []
+        for filter_size in self.filter_size:
+            if filter_size > 0:
+                conc = self.ConvBlock(x, filter_size)
+                cnn_list.append(conc)     
+        for rnn_unit in self.context_vector_dim:
+            if rnn_unit > 0:
+                rnn_maps = Bidirectional(GRU(rnn_unit, return_sequences=True, \
+                            dropout=self.rnn_input_dropout, recurrent_dropout=self.rnn_state_dropout))(x)
                 conc = self.pooling_blend(rnn_maps)
-                have_rnn = True
-                if i == 0:
-                    rnn_conc = conc
-                else:
-                    rnn_conc = concatenate([conc, rnn_conc], axis = 1)
+                rnn_list.append(conc)
 
-        if have_cnn and have_rnn:
-            conc = concatenate([cnn_conc, rnn_conc], axis = 1)
-        elif have_rnn:
-            conc = rnn_conc
-        elif have_cnn:
-            conc = cnn_conc
+        conc = Concatenate(name = 'RCNN_CONC')(cnn_list + rnn_list)
 
         # conc = self.pooling_blend(x)
         if self.separate_label_layer:

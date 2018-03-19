@@ -17,6 +17,7 @@ from contextlib import contextmanager
 # from nltk.stem import PorterStemmer
 # ps = PorterStemmer()
 import gensim
+from CNN_Keras import CNN_Model, get_word2vec_embedding
 
 zpolarity = {0:'zero',1:'one',2:'two',3:'three',4:'four',5:'five',6:'six',7:'seven',8:'eight',9:'nine',10:'ten'}
 zsign = {-1:'negative',  0.: 'neutral', 1:'positive'}
@@ -49,6 +50,11 @@ flags.DEFINE_bool("separate_label_layer", False, "Whether to separate label laye
 flags.DEFINE_bool("stem", False, "Whether to stem")
 flags.DEFINE_bool("resnet_hn", False, "Whether to concatenate hn and rcnn")
 flags.DEFINE_integer('letter_num', 3, 'letter number to aggregate')
+flags.DEFINE_string('kernel_size_list', "1,2,3,4,5,6,7", 'kernel size list')
+flags.DEFINE_float("rnn_input_dropout", 0, "rnn input drop out")
+flags.DEFINE_float("rnn_state_dropout", 0, "rnn state drop out")
+flags.DEFINE_bool("stacking", False, "Whether to stacking")
+flags.DEFINE_bool("uniform_init_emb", False, "Whether to uniform init the embedding")
 FLAGS = flags.FLAGS
 
 train = pd.read_csv(FLAGS.input_training_data_path + '/train.csv')
@@ -120,6 +126,15 @@ if not FLAGS.char_split:
     tokenizer.fit_on_texts(data)
     data = tokenizer.texts_to_sequences(data)
     data = pad_sequences(data, maxlen = FLAGS.max_seq_len)
+    if FLAGS.load_wv_model:
+        emb_weight = get_word2vec_embedding(location = FLAGS.input_training_data_path + FLAGS.wv_model_file, \
+                 tokenizer = tokenizer, nb_words = FLAGS.vocab_size, embed_size = FLAGS.emb_dim, \
+                 model_type = FLAGS.wv_model_type, uniform_init_emb = FLAGS.uniform_init_emb)
+    else:
+        if FLAGS.uniform_init_emb:
+            emb_weight = np.random.uniform(0, 1, (FLAGS.vocab_size, FLAGS.emb_dim))
+        else:
+            emb_weight = np.zeros((FLAGS.vocab_size, FLAGS.emb_dim))
 else:
     tokenizer = None
     data_helper = data_helper(sequence_max_length = FLAGS.max_seq_len, \
@@ -132,65 +147,48 @@ else:
 # np.save(svd_name, data)
 # data = np.load('token_sequence_2018_03_04_15_50_25.npy')
 
-train_data, train_label = data[:nrow], y.values
+train_data, train_label = data[:nrow], y.values[:nrow]
 test_data = data[nrow:]
+
 
 print("Training------")
 multi_label_models = []
 scores_text = []
 sub2 = pd.DataFrame(np.zeros((test.shape[0], len(coly))), columns = coly)
-models, _, _, _ = nfold_train(train_data, train_label, flags = FLAGS, model_types = [FLAGS.model_type], \
-            tokenizer = tokenizer, scores = scores_text, emb_weight = emb_weight) #, valide_data = train_data, valide_label = train_label)
-# exit(0)
-# for c in coly:
-#     print("------Label: {0}".format(c))
-#     label = train_label[c].values
-#     models, _, _, _ = nfold_train(train_data, label, fold = 5, model_types = ['k']) #, valide_label = train_label)
-#     multi_label_models.append(models)
-#     sub2[c] = models_eval(models, test_data)
-#model = ensemble.ExtraTreesClassifier(n_jobs=-1, random_state=3)
-#model.fit(data[:nrow], y[:nrow])
-# print(1- model.score(data[:nrow], y[:nrow]))
-sub2[coly] = models_eval(models, test_data)
-# sub2 = pd.DataFrame([[c[1] for c in sub2[row]] for row in range(len(sub2))]).T
-# sub2.columns = coly
-sub2['id'] = tid
-for c in coly:
-    sub2[c] = sub2[c].clip(0+1e12, 1-1e12)
+models, stacking_data, stacking_label, stacking_test_data = nfold_train(train_data, train_label, flags = FLAGS, model_types = [FLAGS.model_type], \
+            tokenizer = tokenizer, scores = scores_text, emb_weight = emb_weight, test_data = test_data) 
+            #, valide_data = train_data, valide_label = train_label)
 
-''' #blend 1
-sub2.columns = [x+'_' if x not in ['id'] else x for x in sub2.columns]
-blend = pd.merge(sub1, sub2, how='left', on='id')
-for c in coly:
-    blend[c] = blend[c] * 0.8 + blend[c+'_'] * 0.2
-    blend[c] = blend[c].clip(0+1e12, 1-1e12)
-blend = blend[sub1.columns]
+tmp_model_dir = "./model_dir/"
+if not os.path.isdir(tmp_model_dir):
+    os.makedirs(tmp_model_dir, exist_ok=True)
+if FLAGS.stacking:
+    np.save(os.path.join(tmp_model_dir, "stacking_train_data.npy"), stacking_data)
+    np.save(os.path.join(tmp_model_dir, "stacking_train_label.npy"), stacking_label)
+    np.save(os.path.join(tmp_model_dir, "stacking_test_data.npy"), stacking_test_data)
+else:
+    sub2[coly] = models_eval(models, test_data)
+    sub2['id'] = tid
+    for c in coly:
+        sub2[c] = sub2[c].clip(0+1e12, 1-1e12)
+    blend = sub2 #blend[sub2.columns]
+    time_label = strftime('_%Y_%m_%d_%H_%M_%S', gmtime())
+    sub_name = tmp_model_dir + "sub" + time_label + ".csv"
+    blend.to_csv(sub_name, index=False)
 
-#blend 2
-sub2 = blend[:]
-sub2.columns = [x+'_' if x not in ['id'] else x for x in sub2.columns]
-blend = pd.merge(sub1, sub2, how='left', on='id')
-for c in coly:
-    blend[c] = np.sqrt(blend[c] * blend[c+'_'])
-    blend[c] = blend[c].clip(0+1e12, 1-1e12) '''
-blend = sub2 #blend[sub2.columns]
-time_label = strftime('_%Y_%m_%d_%H_%M_%S', gmtime())
-sub_name = "sub" + time_label + ".csv"
-blend.to_csv(sub_name, index=False)
+    scores_text_frame = pd.DataFrame(scores_text, columns = ["score_text"])
+    score_text_file = tmp_model_dir + "score_text" + time_label + ".csv"
+    scores_text_frame.to_csv(score_text_file, index=False)
+    scores = scores_text_frame["score_text"]
+    for i in range(FLAGS.epochs):
+        scores_epoch = scores.loc[scores.str.startswith('epoch:{0}'.format(i + 1))].map(lambda s: float(s.split()[1]))
+        print ("Epoch{0} mean:{1} std:{2} min:{3} max:{4} median:{5}".format(i + 1, \
+            scores_epoch.mean(), scores_epoch.std(), scores_epoch.min(), scores_epoch.max(), scores_epoch.median()))
 
-scores_text_frame = pd.DataFrame(scores_text, columns = ["score_text"])
-score_text_file = "score_text" + time_label + ".csv"
-scores_text_frame.to_csv(score_text_file, index=False)
-scores = scores_text_frame["score_text"]
-for i in range(FLAGS.epochs):
-    scores_epoch = scores.loc[scores.str.startswith('epoch:{0}'.format(i + 1))].map(lambda s: float(s.split()[1]))
-    print ("Epoch{0} mean:{1} std:{2} min:{3} max:{4} median:{5}".format(i + 1, \
-        scores_epoch.mean(), scores_epoch.std(), scores_epoch.min(), scores_epoch.max(), scores_epoch.median()))
-# score_file = "score" + time_label + ".csv"
-# scores.to_csv(score_file, index=False)
-
-# Move to hdfs
 if not os.path.isdir(FLAGS.output_model_path):
     os.makedirs(FLAGS.output_model_path, exist_ok=True)
-shutil.move(sub_name, FLAGS.output_model_path)
-shutil.move(score_text_file, FLAGS.output_model_path)
+for fileName in os.listdir(tmp_model_dir):
+    dst_file = os.path.join(FLAGS.output_model_path, fileName)
+    if os.path.exists(dst_file):
+        os.remove(dst_file)
+    shutil.move(os.path.join(tmp_model_dir, fileName), FLAGS.output_model_path)

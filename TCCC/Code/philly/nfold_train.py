@@ -9,6 +9,7 @@ import numpy as np
 # from RNN_Keras import RNN_Model
 from CNN_Keras import CNN_Model, get_word2vec_embedding
 from vdcnn import VDCNN_Model
+from tensorflow.python.keras.models import Model
 
 # RNN_PARAMS
 RCNN_HIDDEN_UNIT = [128, 64]
@@ -23,10 +24,12 @@ def nfold_train(train_data, train_label, model_types = None,
     """
     print("Over all training size:")
     print(train_data.shape)
+    print("Over all label size:")
+    print(train_label.shape)
 
     kf = KFold(n_splits=flags.nfold, shuffle=False)
     # wv_model = gensim.models.Word2Vec.load("wv_model_norm.gensim")
-
+    stacking = flags.stacking
     stacking_data = None
     stacking_label = None
     test_preds = None
@@ -94,10 +97,14 @@ def nfold_train(train_data, train_label, model_types = None,
                         fix_wv_model = flags.fix_wv_model, \
                         batch_interval = flags.batch_interval, emb_dropout = flags.emb_dropout, \
                         full_connect_dropout = flags.full_connect_dropout, separate_label_layer = flags.separate_label_layer, \
-                        scores = scores, resnet_hn = flags.resnet_hn, top_k = flags.vdcc_top_k, char_split = flags.char_split)
+                        scores = scores, resnet_hn = flags.resnet_hn, top_k = flags.vdcc_top_k, char_split = flags.char_split,\
+                        kernel_size_list = [int(kernel.strip()) for kernel in flags.kernel_size_list.strip().split(',')],
+                        rnn_input_dropout = flags.rnn_input_dropout, rnn_state_dropout = flags.rnn_state_dropout)
                 if num_fold == 0:
                     print(model.model.summary())
                 model.train(train_part, train_part_label, valide_part, valide_part_label)
+                if stacking:
+                    model = Model(inputs = model.model.inputs, outputs = model.model.get_layer(name = 'RCNN_CONC').output)
                 onefold_models.append((model, 'cnn'))
             elif model_type == 'vdcnn':
                 model = VDCNN_Model(num_filters = [int(hn.strip()) for hn in flags.vdcnn_filters.strip().split(',')], \
@@ -114,23 +121,24 @@ def nfold_train(train_data, train_label, model_types = None,
             test_pred = [model_eval(model[0], model[1], test_data) for model in onefold_models]
             test_pred = reduce((lambda x, y: np.c_[x, y]), test_pred)
             if stacking_data is None:
-                stacking_data = np.c_[valide_part, valide_pred]
+                stacking_data = valide_pred #np.c_[valide_part, valide_pred]
                 stacking_label = valide_part_label
                 test_preds = test_pred
             else:
-                stacking_data = np.append(stacking_data, np.c_[valide_part, valide_pred], axis = 0)
+                stacking_data = np.append(stacking_data, valide_pred, axis = 0) #np.append(stacking_data, np.c_[valide_part, valide_pred], axis = 0)
                 stacking_label = np.append(stacking_label, valide_part_label, axis = 0)
                 test_preds += test_pred
             print('stacking_data shape: {0}'.format(stacking_data.shape))
             print('stacking_label shape: {0}'.format(stacking_label.shape))
+            print('stacking test data shape: {0}'.format(test_preds.shape))
         models.append(onefold_models[0])
         num_fold += 1
         if num_fold == flags.ensemble_nfold:
             break
     if stacking:
-        test_preds /= fold
-        test_data = np.c_[test_data, test_preds]
-    return models, stacking_data, stacking_label, test_data
+        test_preds /= flags.ensemble_nfold
+        # test_data = np.c_[test_data, test_preds]
+    return models, stacking_data, stacking_label, test_preds
 
 
 def model_eval(model, model_type, data_frame):
