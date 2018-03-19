@@ -1,11 +1,6 @@
 import lightgbm as lgb
 import pandas as pd
 
-data_dir = "../../Data/5fold/"
-train_data = np.load(data_dir + "stacking_train_data.npy")
-train_label = np.load(data_dir + "stacking_train_label.npy")
-test_data = np.load(data_dir + "stacking_test_data.npy")
-
 def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fold_seed,
         fold = 5, train_weight = None, valide_weight = None):
     """
@@ -21,19 +16,19 @@ def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fol
             'objective': 'binary',
             'metric': {'auc', 'binary_logloss'},
             'num_leaves': 40, #60, #40, # 60,
-            'min_sum_hessian_in_leaf': 10,
-            'max_depth': 10,#12, #6, # 10,
+          #  'min_sum_hessian_in_leaf': 10,
+            'max_depth': 6,#12, #6, # 10,
             'learning_rate': 0.0125, # 0.025,
-            'feature_fraction': 0.35,#0.35, # 0.6
+          #  'feature_fraction': 0.35,#0.35, # 0.6
             'verbose': 0,
           #   'valid_sets': [d_valide],
             'num_boost_round': 1500, #361,
             'feature_fraction_seed': fold_seed,
             #'drop_rate': 0.05,
-            'bagging_fraction': 0.8,
-            'bagging_freq': 20,
-            'bagging_seed': fold_seed,
-            'early_stopping_round': 150,
+            # 'bagging_fraction': 0.8,
+            # 'bagging_freq': 20,
+            # 'bagging_seed': fold_seed,
+            # 'early_stopping_round': 150,
             # 'random_state': 10
             # 'verbose_eval': 20
             #'min_data_in_leaf': 665

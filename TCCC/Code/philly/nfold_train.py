@@ -1,5 +1,5 @@
 from sklearn.model_selection import KFold
-# from lgb import lgbm_train
+from lgb import lgbm_train
 # import xgboost as xgb
 from functools import reduce
 import numpy as np
@@ -27,7 +27,8 @@ def nfold_train(train_data, train_label, model_types = None,
     print("Over all label size:")
     print(train_label.shape)
 
-    kf = KFold(n_splits=flags.nfold, shuffle=False)
+    fold = flags.nfold
+    kf = KFold(n_splits=fold, shuffle=False)
     # wv_model = gensim.models.Word2Vec.load("wv_model_norm.gensim")
     stacking = flags.stacking
     stacking_data = None

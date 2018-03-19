@@ -33,7 +33,7 @@ class RocAucEvaluation(Callback):
 
         self.interval = interval
         self.X_val, self.y_val = validation_data
-        print("y_val shape:{0}".format(self.y_val.shape))
+        # print("y_val shape:{0}".format(self.y_val.shape))
         self.batch_interval = batch_interval
         self.verbose = verbose
         self.scores = scores
@@ -223,7 +223,11 @@ class CNN_Model:
                 conc = self.pooling_blend(rnn_maps)
                 rnn_list.append(conc)
 
-        conc = Concatenate(name = 'RCNN_CONC')(cnn_list + rnn_list)
+        conc_list = cnn_list + rnn_list
+        if len(conc_list) == 1:
+            conc = Lambda(lambda x: x, name = 'RCNN_CONC')(conc_list)
+        else:
+            conc = Concatenate(name = 'RCNN_CONC')(conc_list)
 
         # conc = self.pooling_blend(x)
         if self.separate_label_layer:

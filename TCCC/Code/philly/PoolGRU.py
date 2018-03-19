@@ -59,8 +59,8 @@ FLAGS = flags.FLAGS
 
 
 def load_data():
-    train = pd.read_csv(FLAGS.input_training_data_path + '/train.csv')
-    test = pd.read_csv(FLAGS.input_training_data_path +  '/test.csv')
+    train = pd.read_csv(FLAGS.input_training_data_path + '/train.csv') #.iloc[:200]
+    test = pd.read_csv(FLAGS.input_training_data_path +  '/test.csv') #.iloc[:200]
     # sub1 = pd.read_csv(data_dir + '/submission_ensemble.csv')
     nrow = train.shape[0]
     print("Train Size: {0}".format(nrow))
@@ -117,8 +117,12 @@ def load_data():
     train_data, train_label = data[:nrow], y.values[:nrow]
     test_data = data[nrow:]
 
+    return train_data, train_label, test_data, coly, tid, emb_weight
 
-def sub(mdoels, stacking_data, stacking_label, stacking_test_data, FLAGS):
+
+def sub(mdoels, stacking_data = None, stacking_label = None, stacking_test_data = None, test = None, \
+        scores_text = None):
+    sub2 = pd.DataFrame(np.zeros((test.shape[0], len(coly))), columns = coly)
     tmp_model_dir = "./model_dir/"
     if not os.path.isdir(tmp_model_dir):
         os.makedirs(tmp_model_dir, exist_ok=True)
@@ -153,11 +157,19 @@ def sub(mdoels, stacking_data, stacking_label, stacking_test_data, FLAGS):
             os.remove(dst_file)
         shutil.move(os.path.join(tmp_model_dir, fileName), FLAGS.output_model_path)
 
+
 if __name__ == "__main__":
     print("Training------")
-    multi_label_models = []
+    #train_data, train_label, test_data, coly, tid, emb_weight = load_data()
     scores_text = []
-    sub2 = pd.DataFrame(np.zeros((test.shape[0], len(coly))), columns = coly)
-    models, stacking_data, stacking_label, stacking_test_data = nfold_train(train_data, train_label, flags = FLAGS, model_types = [FLAGS.model_type], \
-                tokenizer = tokenizer, scores = scores_text, emb_weight = emb_weight, test_data = test_data) 
+    data_dir = "./" #"../../Data/10fold/"
+    train_data = np.load(data_dir + 'stacking_train_data.npy')
+    train_label = np.load(data_dir + 'stacking_train_label.npy')
+    test_data = np.load(data_dir + 'stacking_test_data.npy')
+    emb_weight = None
+    for i in range(train_label.shape[1]):
+        models, stacking_data, stacking_label, stacking_test_data = nfold_train(train_data, train_label[:, 2], flags = FLAGS, \
+                model_types = [FLAGS.model_type], scores = scores_text, emb_weight = emb_weight, test_data = test_data) 
                 #, valide_data = train_data, valide_label = train_label)
+    sub(models, stacking_data = stacking_data, stacking_label = stacking_label, stacking_test_data = stacking_test_data, \
+            test = test_data, scores_text = scores_text)
