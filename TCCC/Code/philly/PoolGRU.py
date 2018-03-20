@@ -74,8 +74,8 @@ def load_data():
     tid = test['id'].values
 
     if FLAGS.load_stacking_data:
-        data_dir = "./" #"../../Data/10fold/"
-        svd_features = np.load(data_dir + 'svd_2018_03_01_16_33_00.npy')
+        data_dir = "../../Data/2fold/"
+        svd_features = np.load(data_dir + 'svd.npy')
         svd_train = svd_features[:nrow]
         svd_test = svd_features[nrow:]
         kf = KFold(n_splits=2, shuffle=False)
@@ -86,6 +86,8 @@ def load_data():
         print(train_data.shape, svd_train_part.shape)
         train_data = np.c_[train_data, svd_train_part]
         train_label = np.load(data_dir + 'stacking_train_label.npy')
+        # train_data = train_data[:100]
+        # train_label = train_label[:100]
         test_data = np.load(data_dir + 'stacking_test_data.npy')
         emb_weight = None
     else:
@@ -139,8 +141,7 @@ def load_data():
 
 
 def sub(mdoels, stacking_data = None, stacking_label = None, stacking_test_data = None, test = None, \
-        scores_text = None, coly = None, tid = None):
-    sub2 = pd.DataFrame(np.zeros((test.shape[0], len(coly))), columns = coly)
+        scores_text = None, coly = None, tid = None, sub_re = None):
     tmp_model_dir = "./model_dir/"
     if not os.path.isdir(tmp_model_dir):
         os.makedirs(tmp_model_dir, exist_ok=True)
@@ -149,7 +150,11 @@ def sub(mdoels, stacking_data = None, stacking_label = None, stacking_test_data 
         np.save(os.path.join(tmp_model_dir, "stacking_train_label.npy"), stacking_label)
         np.save(os.path.join(tmp_model_dir, "stacking_test_data.npy"), stacking_test_data)
     else:
-        sub2[coly] = models_eval(models, test_data)
+        sub2 = pd.DataFrame(np.zeros((test.shape[0], len(coly))), columns = coly)
+        if FLAGS.load_stacking_data:
+            sub2[coly] = sub_re
+        else:
+            sub2[coly] = models_eval(models, test)
         sub2['id'] = tid
         for c in coly:
             sub2[c] = sub2[c].clip(0+1e12, 1-1e12)
@@ -180,6 +185,7 @@ if __name__ == "__main__":
     print("Training------")
     scores_text = []
     train_data, train_label, test_data, coly, tid, emb_weight = load_data()
+    sub_re = np.zeros((test_data.shape[0], len(coly)))
     if not FLAGS.load_stacking_data:
     # for i in range(train_label.shape[1]):
         models, stacking_data, stacking_label, stacking_test_data = nfold_train(train_data, train_label, flags = FLAGS, \
@@ -188,7 +194,9 @@ if __name__ == "__main__":
     else:
         for i in range(train_label.shape[1]):
             models, stacking_data, stacking_label, stacking_test_data = nfold_train(train_data, train_label[:, i], flags = FLAGS, \
-                model_types = [FLAGS.model_type], scores = scores_text, emb_weight = emb_weight, test_data = test_data) 
-                #, valide_data = train_data, valide_label = train_label)
+                model_types = [FLAGS.model_type], scores = scores_text, emb_weight = emb_weight, test_data = test_data \
+                # , valide_data = train_data[:100], valide_label = train_label[:100, i]
+                )
+            sub_re[:, i] = models_eval(models, test_data)
     sub(models, stacking_data = stacking_data, stacking_label = stacking_label, stacking_test_data = stacking_test_data, \
-            test = test_data, scores_text = scores_text, coly = coly, tid = tid)
+            test = test_data, scores_text = scores_text, coly = coly, tid = tid, sub_re = sub_re)

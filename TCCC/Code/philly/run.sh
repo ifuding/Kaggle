@@ -1,7 +1,7 @@
 #! /bin/bash
 
 python3 PoolGRU.py --input-training-data-path ../../Data/ --output-model-path . --model_type l \
-        --max_seq_len 100 --nfold 5 --emb_dim 300 --epochs 1 --batch_size 64 --ensemble_nfold 1 \
+        --max_seq_len 100 --nfold 10 --emb_dim 300 --epochs 1 --batch_size 64 --ensemble_nfold 3 \
         --filter_size 128 --batch_interval 1000000 --full_connect_dropout 0 --emb_dropout 0 \
         --full_connect_hn 32 --rnn_unit 128 --vocab_size 150000 --separate_label_layer True --stem False \
         --wv_model_file wiki.en.vec.indata -resnet_hn False --vdcc_top_k 1 --char_split False --load_wv_model True \

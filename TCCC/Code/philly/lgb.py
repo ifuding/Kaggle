@@ -18,7 +18,7 @@ def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fol
             'num_leaves': 15, #60, #40, # 60,
            # 'min_sum_hessian_in_leaf': 10,
             'max_depth': 5,#12, #6, # 10,
-            'learning_rate': 0.035, # 0.025,
+            'learning_rate': 0.03, # 0.025,
             'feature_fraction': 0.5,#0.35, # 0.6
             'verbose': 0,
           #   'valid_sets': [d_valide],
@@ -34,15 +34,15 @@ def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fol
             #'min_data_in_leaf': 665
         }
 
-    # bst = lgb.train(
-    #                 params ,
-    #                 d_train,
-    #                 verbose_eval = 50,
-    #                 valid_sets = [d_train, d_valide],
-    #                 # feature_name=['f' + str(i + 1) for i in range(train_part.shape[1])],
-    #                 #feval = gini_lgbm
-    #                 #num_boost_round = 1
-    #                 )
+    bst = lgb.train(
+                    params ,
+                    d_train,
+                    verbose_eval = 50,
+                    valid_sets = [d_train, d_valide],
+                    # feature_name=['f' + str(i + 1) for i in range(train_part.shape[1])],
+                    #feval = gini_lgbm
+                    #num_boost_round = 1
+                    )
     #pred = model_eval(bst, 'l', valide_part)
     #print(pred[:10])
     #print(valide_part_label[:10])
@@ -51,7 +51,7 @@ def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fol
     #feature_imp = bst.feature_importance(importance_type = 'gain')
     #print (feature_name[np.argsort(feature_imp)])
     # exit(0)
-    cv_result = lgb.cv(params, d_train, nfold=fold) #, feval = gini_lgbm)
-    pd.DataFrame(cv_result).to_csv('cv_result', index = False)
-    exit(0)
+    # cv_result = lgb.cv(params, d_train, nfold=fold) #, feval = gini_lgbm)
+    # pd.DataFrame(cv_result).to_csv('cv_result', index = False)
+    # exit(0)
     return bst
