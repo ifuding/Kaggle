@@ -3,6 +3,7 @@ import pandas as pd
 import sklearn
 import tensorflow as tf
 from sklearn import feature_extraction, ensemble, decomposition, pipeline
+from sklearn.model_selection import KFold
 # from textblob import TextBlob
 from nfold_train import nfold_train, models_eval
 import time
@@ -55,6 +56,7 @@ flags.DEFINE_float("rnn_input_dropout", 0, "rnn input drop out")
 flags.DEFINE_float("rnn_state_dropout", 0, "rnn state drop out")
 flags.DEFINE_bool("stacking", False, "Whether to stacking")
 flags.DEFINE_bool("uniform_init_emb", False, "Whether to uniform init the embedding")
+flags.DEFINE_bool("load_stacking_data", False, "Whether to load stacking data")
 FLAGS = flags.FLAGS
 
 
@@ -71,57 +73,73 @@ def load_data():
     y = train[coly]
     tid = test['id'].values
 
-    df = pd.concat([train['comment_text'], test['comment_text']], axis=0)
-    df = df.fillna("unknown")
-
-    data = df.values
-    # Text to sequence
-    @contextmanager
-    def timer(name):
-        """
-        Taken from Konstantin Lopuhin https://www.kaggle.com/lopuhin
-        in script named : Mercari Golf: 0.3875 CV in 75 LOC, 1900 s
-        https://www.kaggle.com/lopuhin/mercari-golf-0-3875-cv-in-75-loc-1900-s
-        """
-        t0 = time.time()
-        yield
-        print('[{0}] done in {1} s'.format(name, time.time() - t0))
-
-
-    with timer("Performing stemming"):
-        if FLAGS.stem:
-            # stem_sentence = lambda s: " ".join(ps.stem(word) for word in s.strip().split())
-            data = [gensim.parsing.stem_text(comment) for comment in data]
-    print('Tokenizer...')
-    if not FLAGS.char_split:
-        tokenizer = Tokenizer(num_words = FLAGS.vocab_size)
-        tokenizer.fit_on_texts(data)
-        data = tokenizer.texts_to_sequences(data)
-        data = pad_sequences(data, maxlen = FLAGS.max_seq_len)
-        if FLAGS.load_wv_model:
-            emb_weight = get_word2vec_embedding(location = FLAGS.input_training_data_path + FLAGS.wv_model_file, \
-                    tokenizer = tokenizer, nb_words = FLAGS.vocab_size, embed_size = FLAGS.emb_dim, \
-                    model_type = FLAGS.wv_model_type, uniform_init_emb = FLAGS.uniform_init_emb)
-        else:
-            if FLAGS.uniform_init_emb:
-                emb_weight = np.random.uniform(0, 1, (FLAGS.vocab_size, FLAGS.emb_dim))
-            else:
-                emb_weight = np.zeros((FLAGS.vocab_size, FLAGS.emb_dim))
+    if FLAGS.load_stacking_data:
+        data_dir = "./" #"../../Data/10fold/"
+        svd_features = np.load(data_dir + 'svd_2018_03_01_16_33_00.npy')
+        svd_train = svd_features[:nrow]
+        svd_test = svd_features[nrow:]
+        kf = KFold(n_splits=2, shuffle=False)
+        for train_index, test_index in kf.split(svd_train):
+            svd_train_part = svd_train[test_index]
+            break
+        train_data = np.load(data_dir + 'stacking_train_data.npy')
+        print(train_data.shape, svd_train_part.shape)
+        train_data = np.c_[train_data, svd_train_part]
+        train_label = np.load(data_dir + 'stacking_train_label.npy')
+        test_data = np.load(data_dir + 'stacking_test_data.npy')
+        emb_weight = None
     else:
-        tokenizer = None
-        data_helper = data_helper(sequence_max_length = FLAGS.max_seq_len, \
-                wv_model_path = FLAGS.input_training_data_path + FLAGS.wv_model_file, \
-                letter_num = FLAGS.letter_num, emb_dim = FLAGS.emb_dim, load_wv_model = FLAGS.load_wv_model)
-        data, emb_weight, FLAGS.vocab_size = data_helper.text_to_triletter_sequence(data)
+        df = pd.concat([train['comment_text'], test['comment_text']], axis=0)
+        df = df.fillna("unknown")
 
-    train_data, train_label = data[:nrow], y.values[:nrow]
-    test_data = data[nrow:]
+        data = df.values
+        # Text to sequence
+        @contextmanager
+        def timer(name):
+            """
+            Taken from Konstantin Lopuhin https://www.kaggle.com/lopuhin
+            in script named : Mercari Golf: 0.3875 CV in 75 LOC, 1900 s
+            https://www.kaggle.com/lopuhin/mercari-golf-0-3875-cv-in-75-loc-1900-s
+            """
+            t0 = time.time()
+            yield
+            print('[{0}] done in {1} s'.format(name, time.time() - t0))
+
+
+        with timer("Performing stemming"):
+            if FLAGS.stem:
+                # stem_sentence = lambda s: " ".join(ps.stem(word) for word in s.strip().split())
+                data = [gensim.parsing.stem_text(comment) for comment in data]
+        print('Tokenizer...')
+        if not FLAGS.char_split:
+            tokenizer = Tokenizer(num_words = FLAGS.vocab_size)
+            tokenizer.fit_on_texts(data)
+            data = tokenizer.texts_to_sequences(data)
+            data = pad_sequences(data, maxlen = FLAGS.max_seq_len)
+            if FLAGS.load_wv_model:
+                emb_weight = get_word2vec_embedding(location = FLAGS.input_training_data_path + FLAGS.wv_model_file, \
+                        tokenizer = tokenizer, nb_words = FLAGS.vocab_size, embed_size = FLAGS.emb_dim, \
+                        model_type = FLAGS.wv_model_type, uniform_init_emb = FLAGS.uniform_init_emb)
+            else:
+                if FLAGS.uniform_init_emb:
+                    emb_weight = np.random.uniform(0, 1, (FLAGS.vocab_size, FLAGS.emb_dim))
+                else:
+                    emb_weight = np.zeros((FLAGS.vocab_size, FLAGS.emb_dim))
+        else:
+            tokenizer = None
+            data_helper = data_helper(sequence_max_length = FLAGS.max_seq_len, \
+                    wv_model_path = FLAGS.input_training_data_path + FLAGS.wv_model_file, \
+                    letter_num = FLAGS.letter_num, emb_dim = FLAGS.emb_dim, load_wv_model = FLAGS.load_wv_model)
+            data, emb_weight, FLAGS.vocab_size = data_helper.text_to_triletter_sequence(data)
+
+        train_data, train_label = data[:nrow], y.values[:nrow]
+        test_data = data[nrow:]
 
     return train_data, train_label, test_data, coly, tid, emb_weight
 
 
 def sub(mdoels, stacking_data = None, stacking_label = None, stacking_test_data = None, test = None, \
-        scores_text = None):
+        scores_text = None, coly = None, tid = None):
     sub2 = pd.DataFrame(np.zeros((test.shape[0], len(coly))), columns = coly)
     tmp_model_dir = "./model_dir/"
     if not os.path.isdir(tmp_model_dir):
@@ -160,16 +178,17 @@ def sub(mdoels, stacking_data = None, stacking_label = None, stacking_test_data 
 
 if __name__ == "__main__":
     print("Training------")
-    #train_data, train_label, test_data, coly, tid, emb_weight = load_data()
     scores_text = []
-    data_dir = "./" #"../../Data/10fold/"
-    train_data = np.load(data_dir + 'stacking_train_data.npy')
-    train_label = np.load(data_dir + 'stacking_train_label.npy')
-    test_data = np.load(data_dir + 'stacking_test_data.npy')
-    emb_weight = None
-    for i in range(train_label.shape[1]):
-        models, stacking_data, stacking_label, stacking_test_data = nfold_train(train_data, train_label[:, 2], flags = FLAGS, \
+    train_data, train_label, test_data, coly, tid, emb_weight = load_data()
+    if not FLAGS.load_stacking_data:
+    # for i in range(train_label.shape[1]):
+        models, stacking_data, stacking_label, stacking_test_data = nfold_train(train_data, train_label, flags = FLAGS, \
+                model_types = [FLAGS.model_type], scores = scores_text, emb_weight = emb_weight, test_data = test_data) 
+                #, valide_data = train_data, valide_label = train_label)
+    else:
+        for i in range(train_label.shape[1]):
+            models, stacking_data, stacking_label, stacking_test_data = nfold_train(train_data, train_label[:, i], flags = FLAGS, \
                 model_types = [FLAGS.model_type], scores = scores_text, emb_weight = emb_weight, test_data = test_data) 
                 #, valide_data = train_data, valide_label = train_label)
     sub(models, stacking_data = stacking_data, stacking_label = stacking_label, stacking_test_data = stacking_test_data, \
-            test = test_data, scores_text = scores_text)
+            test = test_data, scores_text = scores_text, coly = coly, tid = tid)

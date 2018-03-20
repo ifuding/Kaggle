@@ -45,6 +45,8 @@ def nfold_train(train_data, train_label, model_types = None,
     for train_index, test_index in kf.split(train_data):
         print('fold: %d th train :-)' % (num_fold))
         print('Train size: {} Valide size: {}'.format(train_index.shape[0], test_index.shape[0]))
+        # print(test_index[:100])
+        # exit(0)
         if valide_label is None:
             train_part = train_data[train_index]
             train_part_label = train_label[train_index]
