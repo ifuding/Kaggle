@@ -60,14 +60,14 @@ def load_data():
 
     with timer("loading train data"):
         print('loading train data...')
-        train_df = pd.read_csv(path+"train_sample.csv", \
+        train_df = pd.read_csv(path+"train.csv", \
                     # skiprows=range(1,144903891), nrows=40000000, \
                     dtype=dtypes, usecols=['ip','app','device','os', 'channel', 'click_time', 'is_attributed'])
 
     with timer("loading test data"):
         print('loading test data...')
         test_df = pd.read_csv(path+"test.csv", \
-                    nrows=40000, \
+                    # nrows=40000, \
                     dtype=dtypes, usecols=['ip','app','device','os', 'channel', 'click_time', 'click_id'])
         len_train = len(train_df)
         train_df=train_df.append(test_df)
