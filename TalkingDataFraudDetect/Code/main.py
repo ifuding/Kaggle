@@ -111,8 +111,12 @@ def load_data():
     # finally:
     #     print ("Save failed!")
     #     pass
-    train_data = train_df[:len_train][keras_train.SPARSE_FEATURE_LIST].values
-    train_label = train_df[:len_train]['is_attributed'].values
+    valide_len = 37000000
+    train_data = train_df[:len_train - valide_len][keras_train.SPARSE_FEATURE_LIST].values
+    train_label = train_df[:len_train - valide_len]['is_attributed'].values
+    valide_data = train_df[len_train - valide_len:len_train][keras_train.SPARSE_FEATURE_LIST].values
+    valide_label = train_df[len_train - valide_len:len_train]['is_attributed'].values
+
     test_data = train_df[len_train:][keras_train.SPARSE_FEATURE_LIST].values
     test_id = train_df[len_train:]['click_id'].astype('uint32').values
     del train_df
@@ -122,7 +126,7 @@ def load_data():
     # print("valid size: ", len(val_df))
     print("test size : ", len(test_data))
 
-    return train_data, train_label, test_data, test_id
+    return train_data, train_label, test_data, test_id, valide_data, valide_label
 
 
 def sub(mdoels, stacking_data = None, stacking_label = None, stacking_test_data = None, test = None, \
@@ -166,11 +170,11 @@ def sub(mdoels, stacking_data = None, stacking_label = None, stacking_test_data 
 
 if __name__ == "__main__":
     scores_text = []
-    train_data, train_label, test_data, tid = load_data()
+    train_data, train_label, test_data, tid, valide_data, valide_label = load_data()
     if not FLAGS.load_stacking_data:
         models, stacking_data, stacking_label, stacking_test_data = nfold_train(train_data, train_label, flags = FLAGS, \
-                model_types = [FLAGS.model_type], scores = scores_text, test_data = test_data) 
-                #, valide_data = train_data, valide_label = train_label)
+                model_types = [FLAGS.model_type], scores = scores_text, test_data = test_data, \
+                valide_data = valide_data, valide_label = valide_label)
     else:
         for i in range(train_label.shape[1]):
             models, stacking_data, stacking_label, stacking_test_data = nfold_train(train_data, train_label[:, i], flags = FLAGS, \

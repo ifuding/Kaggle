@@ -71,7 +71,10 @@ class RocAucEvaluation(Callback):
     
     def on_batch_end(self, batch, logs={}):
         if(self.verbose >= 2) and (batch % self.batch_interval == 0):
+            # y_pred = self.model.predict(self.X_val, verbose=0)
+            # loss = metrics.log_loss(self.y_val, y_pred)
             print("Hi! on_batch_end() , batch=",batch,",logs:",logs)
+            # print("Valide size=",y_pred.shape[0], "  Valide loss=",loss)
 
 class DNN_Model:
     """
@@ -129,7 +132,7 @@ class DNN_Model:
         """
         Keras Training
         """
-        print("-----CNN Test-----")
+        print("-----DNN Test-----")
         pred = self.model.predict(test_part, batch_size=1024, verbose=verbose)
         return pred
 

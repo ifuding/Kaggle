@@ -1,9 +1,9 @@
 #! /bin/bash
 
-python3 main.py --model_type k --full_connect_hn 32 --stacking False --nfold 5 \
-        --batch_size 1024 --full_connect_dropout 0 --full_connect_hn "16, 4" \
-        --epochs 1 --ensemble_nfold 1 --batch_interval 10000 \
-        --input-training-data-path ../Data/ --output-model-path . --emb_dim "10,5,5,5,5,5,4" \
+python3 main.py --model_type k --full_connect_hn 4 --stacking False --nfold 5 \
+        --batch_size 1024 --full_connect_dropout 0 \
+        --epochs 1 --ensemble_nfold 1 --batch_interval 20000 \
+        --input-training-data-path ../Data/ --output-model-path . --emb_dim "5,5,5,5,5,5,4" \
         --debug False
 
 # python3 PoolGRU.py --input-training-data-path ../../Data/ --output-model-path . --model_type vdcnn \
