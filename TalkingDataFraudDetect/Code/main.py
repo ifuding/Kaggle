@@ -40,6 +40,7 @@ flags.DEFINE_string('full_connect_hn', "64, 32", 'full connect hidden units')
 flags.DEFINE_float("full_connect_dropout", 0, "full connect drop out")
 flags.DEFINE_bool("stacking", False, "Whether to stacking")
 flags.DEFINE_bool("load_stacking_data", False, "Whether to load stacking data")
+flags.DEFINE_bool("debug", False, "Whether to load small data for debuging")
 FLAGS = flags.FLAGS
 
 
@@ -60,14 +61,21 @@ def load_data():
 
     with timer("loading train data"):
         print('loading train data...')
-        train_df = pd.read_csv(path+"train.csv", \
+        if FLAGS.debug:
+            train_data_path = path+"train_sample.csv"
+        else:
+            train_data_path = path+"train.csv"
+        train_df = pd.read_csv(train_data_path, \
                     # skiprows=range(1,144903891), nrows=40000000, \
                     dtype=dtypes, usecols=['ip','app','device','os', 'channel', 'click_time', 'is_attributed'])
 
     with timer("loading test data"):
         print('loading test data...')
-        test_df = pd.read_csv(path+"test.csv", \
-                    # nrows=40000, \
+        if FLAGS.debug:
+            test_data_path = path+"test_sample.csv"
+        else:
+            test_data_path = path+"test.csv"
+        test_df = pd.read_csv(test_data_path, \
                     dtype=dtypes, usecols=['ip','app','device','os', 'channel', 'click_time', 'click_id'])
         len_train = len(train_df)
         train_df=train_df.append(test_df)
@@ -106,7 +114,7 @@ def load_data():
     train_data = train_df[:len_train][keras_train.SPARSE_FEATURE_LIST].values
     train_label = train_df[:len_train]['is_attributed'].values
     test_data = train_df[len_train:][keras_train.SPARSE_FEATURE_LIST].values
-    test_id = train_df[len_train:]['click_id'].values
+    test_id = train_df[len_train:]['click_id'].astype('uint32').values
     del train_df
     gc.collect()
 
@@ -130,9 +138,8 @@ def sub(mdoels, stacking_data = None, stacking_label = None, stacking_test_data 
         # if FLAGS.load_stacking_data:
         #     sub2[coly] = sub_re
         # else:
-        sub_re = models_eval(models, test)
-        sub_re = pd.DataFrame(sub_re, columns = ['is_attributed'])
-        sub_re['id'] = tid
+        sub_re = pd.DataFrame(tid, columns = ['click_id'])
+        sub_re['is_attributed'] = models_eval(models, test)
         # sub2[c] = sub2[c].clip(0+1e12, 1-1e12)
         # blend = sub2 #blend[sub2.columns]
         time_label = time.strftime('_%Y_%m_%d_%H_%M_%S', time.gmtime())
