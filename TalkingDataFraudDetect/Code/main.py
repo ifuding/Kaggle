@@ -17,6 +17,7 @@ from nfold_train import nfold_train, models_eval
 import tensorflow as tf
 import os
 import shutil
+from lcc_sample import neg_sample
 
 target = 'is_attributed'
 predictors = ['app','device','os', 'channel', 'hour', 'day', 
@@ -41,6 +42,9 @@ flags.DEFINE_float("full_connect_dropout", 0, "full connect drop out")
 flags.DEFINE_bool("stacking", False, "Whether to stacking")
 flags.DEFINE_bool("load_stacking_data", False, "Whether to load stacking data")
 flags.DEFINE_bool("debug", False, "Whether to load small data for debuging")
+flags.DEFINE_bool("neg_sample", False, "Whether to do negative sample")
+flags.DEFINE_bool("lcc_sample", False, "Whether to do lcc sample")
+flags.DEFINE_integer("sample_C", 1, "sample rate")
 FLAGS = flags.FLAGS
 
 
@@ -111,7 +115,7 @@ def load_data():
     # finally:
     #     print ("Save failed!")
     #     pass
-    valide_len = 37000000
+    valide_len = len_train // 5
     train_data = train_df[:len_train - valide_len][keras_train.SPARSE_FEATURE_LIST].values
     train_label = train_df[:len_train - valide_len]['is_attributed'].values
     valide_data = train_df[len_train - valide_len:len_train][keras_train.SPARSE_FEATURE_LIST].values
@@ -122,11 +126,12 @@ def load_data():
     del train_df
     gc.collect()
 
+    if FLAGS.neg_sample:
+        train_data, train_label, weight = neg_sample(train_data, train_label, FLAGS.sample_C)
     print("train size: ", len(train_data))
-    # print("valid size: ", len(val_df))
+    print("valid size: ", len(valide_data))
     print("test size : ", len(test_data))
-
-    return train_data, train_label, test_data, test_id, valide_data, valide_label
+    return train_data, train_label, test_data, test_id, valide_data, valide_label, weight
 
 
 def sub(mdoels, stacking_data = None, stacking_label = None, stacking_test_data = None, test = None, \
@@ -170,7 +175,7 @@ def sub(mdoels, stacking_data = None, stacking_label = None, stacking_test_data 
 
 if __name__ == "__main__":
     scores_text = []
-    train_data, train_label, test_data, tid, valide_data, valide_label = load_data()
+    train_data, train_label, test_data, tid, valide_data, valide_label, weight = load_data()
     if not FLAGS.load_stacking_data:
         models, stacking_data, stacking_label, stacking_test_data = nfold_train(train_data, train_label, flags = FLAGS, \
                 model_types = [FLAGS.model_type], scores = scores_text, test_data = test_data, \
