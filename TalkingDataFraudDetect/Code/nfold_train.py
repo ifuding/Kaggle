@@ -1,5 +1,5 @@
 from sklearn.model_selection import KFold
-# from lgb import lgbm_train
+from lgb import lgbm_train
 # import xgboost as xgb
 # from functools import reduce
 import numpy as np
@@ -58,14 +58,20 @@ def nfold_train(train_data, train_label, model_types = None,
         for model_type in model_types:
             if model_type == 'k':
                 # with tf.device('/cpu:0'):
+                if flags.load_only_singleCnt:
+                    dense_input_len = train_part.shape[1]
                 model = DNN_Model(hidden_dim = [int(hn.strip()) for hn in flags.full_connect_hn.strip().split(',')], \
                     batch_size = flags.batch_size, epochs = flags.epochs, \
                     batch_interval = flags.batch_interval, emb_dropout = flags.emb_dropout, \
                     full_connect_dropout = flags.full_connect_dropout, scores = scores, \
-                    emb_dim = [int(e.strip()) for e in flags.emb_dim.strip().split(',')])
+                    emb_dim = [int(e.strip()) for e in flags.emb_dim.strip().split(',')], \
+                    load_only_singleCnt = flags.load_only_singleCnt, dense_input_len = dense_input_len)
                 if num_fold == 0:
                     print(model.model.summary())
-                model.train(list(train_part.transpose()), train_part_label, \
+                if flags.load_only_singleCnt:
+                    model.train(train_part, train_part_label, valide_part, valide_part_label)
+                else:
+                    model.train(list(train_part.transpose()), train_part_label, \
                         list(valide_part.transpose()), valide_part_label)
                 if stacking:
                     model = Model(inputs = model.model.inputs, outputs = model.model.get_layer(name = 'RCNN_CONC').output)

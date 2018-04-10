@@ -45,6 +45,7 @@ flags.DEFINE_bool("debug", False, "Whether to load small data for debuging")
 flags.DEFINE_bool("neg_sample", False, "Whether to do negative sample")
 flags.DEFINE_bool("lcc_sample", False, "Whether to do lcc sample")
 flags.DEFINE_integer("sample_C", 1, "sample rate")
+flags.DEFINE_bool("load_only_singleCnt", False, "Whether to load only singleCnt")
 FLAGS = flags.FLAGS
 
 
@@ -54,43 +55,136 @@ def load_data():
     path = FLAGS.input_training_data_path
 
     dtypes = {
-            'ip'            : 'uint32',
-            'app'           : 'uint16',
-            'device'        : 'uint16',
-            'os'            : 'uint16',
-            'channel'       : 'uint16',
-            'is_attributed' : 'uint8',
-            'click_id'      : 'uint32'
+            'ip'            : 'uint32', 'app'           : 'uint16',
+            'device'        : 'uint16', 'os'            : 'uint16',
+            'channel'       : 'uint16', 'is_attributed' : 'uint8',
+            'click_id'      : 'uint32',
+
+            'ipCnt'         : 'uint32', 'ipAttCnt'      : 'uint16',
+            'appCnt'        : 'uint32', 'appAttCnt'     : 'uint32',
+            'deviceCnt'     : 'uint32', 'deviceAttCnt'  : 'uint32',
+            'osCnt'         : 'uint32', 'osAttCnt'      : 'uint32',
+            'channelCnt'    : 'uint32', 'channelAttCnt' : 'uint32',
+
+            'ipAppCnt'      : 'uint32', 'ipAppAttCnt'   : 'uint16',
+            'ipDeviceCnt'   : 'uint32', 'ipDeviceAttCnt': 'uint16',
+            'ipOsCnt'       : 'uint32', 'ipOsAttCnt'    : 'uint16',
+            'ipChannelCnt'  : 'uint32', 'ipChannelAttCnt'   : 'uint16',
+            'appDeviceCnt'  : 'uint32', 'appDeviceAttCnt'   : 'uint32',
+            'appOsCnt'      : 'uint32', 'appOsAttCnt'   : 'uint16',
+            'appChannelCnt' : 'uint32', 'appChannelAttCnt'  : 'uint32',
+            'deviceOsCnt'   : 'uint32', 'deviceOsAttCnt'    : 'uint32',
+            'deviceChannelCnt'  : 'uint32', 'deviceChannelAttCnt' : 'uint16',
+            'osChannelCnt'      : 'uint32', 'osChannelAttCnt'     : 'uint16',
+
+            'ipappdeviceCnt'        : 'uint32', 'ipappdeviceAttCnt'     : 'uint16', 
+            'ipapposCnt'            : 'uint16', 'ipapposAttCnt'         : 'uint16', 
+            'ipappchannelCnt'       : 'uint32', 'ipappchannelAttCnt'    : 'uint16', 
+            'ipdeviceosCnt'         : 'uint32', 'ipdeviceosAttCnt'      : 'uint16', 
+            'ipdevicechannelCnt'    : 'uint32', 'ipdevicechannelAttCnt' : 'uint16', 
+            'iposchannelCnt'        : 'uint16', 'iposchannelAttCnt'     : 'uint8', 
+            'appdeviceosCnt'        : 'uint32', 'appdeviceosAttCnt'     : 'uint16', 
+            'appdevicechannelCnt'   : 'uint32', 'appdevicechannelAttCnt': 'uint16', 
+            'apposchannelCnt'       : 'uint32', 'apposchannelAttCnt'    : 'uint16', 
+            'deviceoschannelCnt'    : 'uint32', 'deviceoschannelAttCnt' : 'uint16', 
+
+            'ipappdeviceosCnt'      : 'uint16', 'ipappdeviceosAttCnt'   : 'uint16', 
+            'ipappdevicechannelCnt' : 'uint32', 'ipappdevicechannelAttCnt'      : 'uint16', 
+            'ipapposchannelCnt'      : 'uint16', 'ipapposchannelAttCnt'      : 'uint8', 
+            'ipdeviceoschannelCnt'      : 'uint16', 'ipdeviceoschannelAttCnt'      : 'uint8', 
+            'appdeviceoschannelCnt'      : 'uint32', 'appdeviceoschannelAttCnt' : 'uint16', 
             }
 
     with timer("loading train data"):
         print('loading train data...')
-        if FLAGS.debug:
-            train_data_path = path+"train_sample.csv"
+        if FLAGS.load_only_singleCnt:
+            path_prefix = "train_part_Cnt_Neg20"
         else:
-            train_data_path = path+"train.csv"
-        train_df = pd.read_csv(train_data_path, \
+            path_prefix = "train_part_Cnt_Neg20"
+        if FLAGS.debug:
+            train_data_path = path + path_prefix + "_sample.csv"
+        else:
+            train_data_path = path + path_prefix + ".csv"
+        if FLAGS.load_only_singleCnt:
+            train_df = pd.read_csv(train_data_path, \
+                    dtype=dtypes, header = None, sep = '\t', 
+                    #nrows=40000000,  
+                    #skiprows = 9970280, \
+                    names=['is_attributed', 'ipCnt', 'ipAttCnt', 'appCnt', 'appAttCnt', 'deviceCnt', 'deviceAttCnt', 'osCnt', 'osAttCnt', 'channelCnt', 'channelAttCnt', 
+                        'ipAppCnt','ipAppAttCnt','ipDeviceCnt','ipDeviceAttCnt','ipOsCnt','ipOsAttCnt','ipChannelCnt','ipChannelAttCnt','appDeviceCnt','appDeviceAttCnt',
+                        'appOsCnt','appOsAttCnt','appChannelCnt','appChannelAttCnt','deviceOsCnt','deviceOsAttCnt','deviceChannelCnt','deviceChannelAttCnt','osChannelCnt',
+                        'osChannelAttCnt', 
+                        'ipappdeviceCnt','ipappdeviceAttCnt','ipapposCnt','ipapposAttCnt','ipappchannelCnt','ipappchannelAttCnt','ipdeviceosCnt',
+                        'ipdeviceosAttCnt','ipdevicechannelCnt','ipdevicechannelAttCnt','iposchannelCnt','iposchannelAttCnt','appdeviceosCnt','appdeviceosAttCnt',
+                        'appdevicechannelCnt','appdevicechannelAttCnt','apposchannelCnt','apposchannelAttCnt','deviceoschannelCnt','deviceoschannelAttCnt',
+                        'ipappdeviceosCnt','ipappdeviceosAttCnt','ipappdevicechannelCnt','ipappdevicechannelAttCnt','ipapposchannelCnt','ipapposchannelAttCnt',
+                        'ipdeviceoschannelCnt','ipdeviceoschannelAttCnt','appdeviceoschannelCnt','appdeviceoschannelAttCnt'])
+            #train_df.fillna(0)
+        else:
+            train_df = pd.read_csv(train_data_path, \
                     # skiprows=range(1,144903891), nrows=40000000, \
                     dtype=dtypes, usecols=['ip','app','device','os', 'channel', 'click_time', 'is_attributed'])
+        print(train_df.info())
+
+    with timer("loading valide data"):
+        print('loading valide data...')
+        if FLAGS.load_only_singleCnt:
+            path_prefix = "valide_Cnt"
+            if FLAGS.debug:
+                valide_data_path = path + path_prefix + "_sample.csv"
+            else:
+                valide_data_path = path + path_prefix + ".csv"
+            valide_df = pd.read_csv(valide_data_path, \
+                        dtype=dtypes, header = None, sep = '\t',
+                        names=['is_attributed', 'ipCnt', 'ipAttCnt', 'appCnt', 'appAttCnt', 'deviceCnt', 'deviceAttCnt', 'osCnt', 'osAttCnt', 'channelCnt', 'channelAttCnt', 
+                        'ipAppCnt','ipAppAttCnt','ipDeviceCnt','ipDeviceAttCnt','ipOsCnt','ipOsAttCnt','ipChannelCnt','ipChannelAttCnt','appDeviceCnt','appDeviceAttCnt',
+                        'appOsCnt','appOsAttCnt','appChannelCnt','appChannelAttCnt','deviceOsCnt','deviceOsAttCnt','deviceChannelCnt','deviceChannelAttCnt','osChannelCnt',
+                        'osChannelAttCnt', 
+                        'ipappdeviceCnt','ipappdeviceAttCnt','ipapposCnt','ipapposAttCnt','ipappchannelCnt','ipappchannelAttCnt','ipdeviceosCnt',
+                        'ipdeviceosAttCnt','ipdevicechannelCnt','ipdevicechannelAttCnt','iposchannelCnt','iposchannelAttCnt','appdeviceosCnt','appdeviceosAttCnt',
+                        'appdevicechannelCnt','appdevicechannelAttCnt','apposchannelCnt','apposchannelAttCnt','deviceoschannelCnt','deviceoschannelAttCnt',
+                        'ipappdeviceosCnt','ipappdeviceosAttCnt','ipappdevicechannelCnt','ipappdevicechannelAttCnt','ipapposchannelCnt','ipapposchannelAttCnt',
+                        'ipdeviceoschannelCnt','ipdeviceoschannelAttCnt','appdeviceoschannelCnt','appdeviceoschannelAttCnt'])
 
     with timer("loading test data"):
         print('loading test data...')
-        if FLAGS.debug:
-            test_data_path = path+"test_sample.csv"
+        if FLAGS.load_only_singleCnt:
+            path_prefix = "test_Cnt"
         else:
-            test_data_path = path+"test.csv"
-        test_df = pd.read_csv(test_data_path, \
+            path_prefix = "test_Cnt"
+        if FLAGS.debug:
+            test_data_path = path + path_prefix + "_sample.csv"
+        else:
+            test_data_path = path + path_prefix + ".csv"
+        if FLAGS.load_only_singleCnt:
+            test_df = pd.read_csv(test_data_path, \
+                    dtype=dtypes, header = None, sep = '\t', 
+                    # skiprows = 8609683, \
+                    names=['click_id', 'ipCnt', 'ipAttCnt', 'appCnt', 'appAttCnt', 'deviceCnt', 'deviceAttCnt', 'osCnt', 'osAttCnt', 'channelCnt', 'channelAttCnt', 
+                        'ipAppCnt','ipAppAttCnt','ipDeviceCnt','ipDeviceAttCnt','ipOsCnt','ipOsAttCnt','ipChannelCnt','ipChannelAttCnt','appDeviceCnt','appDeviceAttCnt',
+                        'appOsCnt','appOsAttCnt','appChannelCnt','appChannelAttCnt','deviceOsCnt','deviceOsAttCnt','deviceChannelCnt','deviceChannelAttCnt','osChannelCnt',
+                        'osChannelAttCnt', 
+                        'ipappdeviceCnt','ipappdeviceAttCnt','ipapposCnt','ipapposAttCnt','ipappchannelCnt','ipappchannelAttCnt','ipdeviceosCnt',
+                        'ipdeviceosAttCnt','ipdevicechannelCnt','ipdevicechannelAttCnt','iposchannelCnt','iposchannelAttCnt','appdeviceosCnt','appdeviceosAttCnt',
+                        'appdevicechannelCnt','appdevicechannelAttCnt','apposchannelCnt','apposchannelAttCnt','deviceoschannelCnt','deviceoschannelAttCnt',
+                        'ipappdeviceosCnt','ipappdeviceosAttCnt','ipappdevicechannelCnt','ipappdevicechannelAttCnt','ipapposchannelCnt','ipapposchannelAttCnt',
+                        'ipdeviceoschannelCnt','ipdeviceoschannelAttCnt','appdeviceoschannelCnt','appdeviceoschannelAttCnt'])
+            #test_df.fillna(0)
+        else:
+            test_df = pd.read_csv(test_data_path, \
                     dtype=dtypes, usecols=['ip','app','device','os', 'channel', 'click_time', 'click_id'])
         len_train = len(train_df)
-        train_df=train_df.append(test_df)
-        del test_df
+        if not FLAGS.load_only_singleCnt:
+            train_df=train_df.append(test_df)
+            del test_df
         gc.collect()
 
     with timer("Extracting new features"):
         print('Extracting new features...')
-        train_df['hour'] = pd.to_datetime(train_df.click_time).dt.hour.astype('uint8')
-        train_df['day'] = pd.to_datetime(train_df.click_time).dt.day.astype('uint8')
-        gc.collect()
+        if not FLAGS.load_only_singleCnt:
+            train_df['hour'] = pd.to_datetime(train_df.click_time).dt.hour.astype('uint8')
+            train_df['day'] = pd.to_datetime(train_df.click_time).dt.day.astype('uint8')
+            gc.collect()
         # for col in train_df:
         #     uniq = train_df[col].unique()
         #     print ("{0} {1} {2}".format(col, len(uniq), uniq.max()))
@@ -115,17 +209,29 @@ def load_data():
     # finally:
     #     print ("Save failed!")
     #     pass
-    valide_len = len_train // 5
-    train_data = train_df[:len_train - valide_len][keras_train.SPARSE_FEATURE_LIST].values
-    train_label = train_df[:len_train - valide_len]['is_attributed'].values
-    valide_data = train_df[len_train - valide_len:len_train][keras_train.SPARSE_FEATURE_LIST].values
-    valide_label = train_df[len_train - valide_len:len_train]['is_attributed'].values
+    if FLAGS.load_only_singleCnt:
+        train_data = train_df[keras_train.DENSE_FEATURE_LIST].values
+        train_label = train_df['is_attributed'].values
+        del train_df
+        valide_data = valide_df[keras_train.DENSE_FEATURE_LIST].values
+        valide_label = valide_df['is_attributed'].values
+        del valide_df
+        test_data = test_df[keras_train.DENSE_FEATURE_LIST].values
+        test_id = test_df['click_id'].astype('uint32').values
+        del test_df
+    else:
+        valide_len = len_train // 5
+        train_data = train_df[:len_train - valide_len][keras_train.SPARSE_FEATURE_LIST].values
+        train_label = train_df[:len_train - valide_len]['is_attributed'].values
+        valide_data = train_df[len_train - valide_len:len_train][keras_train.SPARSE_FEATURE_LIST].values
+        valide_label = train_df[len_train - valide_len:len_train]['is_attributed'].values
 
-    test_data = train_df[len_train:][keras_train.SPARSE_FEATURE_LIST].values
-    test_id = train_df[len_train:]['click_id'].astype('uint32').values
-    del train_df
+        test_data = train_df[len_train:][keras_train.SPARSE_FEATURE_LIST].values
+        test_id = train_df[len_train:]['click_id'].astype('uint32').values
+        del train_df
     gc.collect()
 
+    weight = None
     if FLAGS.neg_sample:
         train_data, train_label, weight = neg_sample(train_data, train_label, FLAGS.sample_C)
     print("train size: ", len(train_data))
@@ -176,6 +282,8 @@ def sub(mdoels, stacking_data = None, stacking_label = None, stacking_test_data 
 if __name__ == "__main__":
     scores_text = []
     train_data, train_label, test_data, tid, valide_data, valide_label, weight = load_data()
+    if not FLAGS.load_only_singleCnt:
+        test_data = list(test_data.transpose())
     if not FLAGS.load_stacking_data:
         models, stacking_data, stacking_label, stacking_test_data = nfold_train(train_data, train_label, flags = FLAGS, \
                 model_types = [FLAGS.model_type], scores = scores_text, test_data = test_data, \
@@ -188,4 +296,4 @@ if __name__ == "__main__":
                 )
             sub_re[:, i] = models_eval(models, test_data)
     sub(models, stacking_data = stacking_data, stacking_label = stacking_label, stacking_test_data = stacking_test_data, \
-            test = list(test_data.transpose()), scores_text = scores_text, tid = tid)
+            test = test_data, scores_text = scores_text, tid = tid)

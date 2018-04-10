@@ -46,9 +46,19 @@ SPARSE_FEATURES = {"app": {"max": 768, "emb": 5},
                    "hour": {"max": 23, "emb": 5},
                    "day": {"max": 10, "emb": 4}
                    }
-
 SPARSE_FEATURE_LIST = list(SPARSE_FEATURES.keys())
 print ("SPARSE_FEATURE_LIST: {0}".format(SPARSE_FEATURE_LIST))
+
+DENSE_FEATURE_LIST = ['ipCnt', 'ipAttCnt', 'appCnt', 'appAttCnt', 'deviceCnt', 'deviceAttCnt', 'osCnt', 'osAttCnt', 'channelCnt', 'channelAttCnt', 
+                        'ipAppCnt','ipAppAttCnt','ipDeviceCnt','ipDeviceAttCnt','ipOsCnt','ipOsAttCnt','ipChannelCnt','ipChannelAttCnt','appDeviceCnt','appDeviceAttCnt',
+                        'appOsCnt','appOsAttCnt','appChannelCnt','appChannelAttCnt','deviceOsCnt','deviceOsAttCnt','deviceChannelCnt','deviceChannelAttCnt','osChannelCnt',
+                        'osChannelAttCnt', 
+                        'ipappdeviceCnt','ipappdeviceAttCnt','ipapposCnt','ipapposAttCnt','ipappchannelCnt','ipappchannelAttCnt','ipdeviceosCnt',
+                        'ipdeviceosAttCnt','ipdevicechannelCnt','ipdevicechannelAttCnt','iposchannelCnt','iposchannelAttCnt','appdeviceosCnt','appdeviceosAttCnt',
+                        'appdevicechannelCnt','appdevicechannelAttCnt','apposchannelCnt','apposchannelAttCnt','deviceoschannelCnt','deviceoschannelAttCnt',
+                        'ipappdeviceosCnt','ipappdeviceosAttCnt','ipappdevicechannelCnt','ipappdevicechannelAttCnt','ipapposchannelCnt','ipapposchannelAttCnt',
+                        'ipdeviceoschannelCnt','ipdeviceoschannelAttCnt','appdeviceoschannelCnt','appdeviceoschannelAttCnt']
+print ("DENSE_FEATURE_LIST: {0} {1}".format(len(DENSE_FEATURE_LIST), DENSE_FEATURE_LIST))
 
 class RocAucEvaluation(Callback):
     def __init__(self, validation_data=(), interval=1, batch_interval = 1000000, verbose = 2, \
@@ -80,7 +90,7 @@ class DNN_Model:
     """
     """
     def __init__(self, hidden_dim, batch_size, epochs, batch_interval, emb_dropout, \
-                full_connect_dropout, scores, emb_dim):
+                full_connect_dropout, scores, emb_dim, load_only_singleCnt, dense_input_len):
         self.hidden_dim = hidden_dim
         self.batch_size = batch_size
         self.epochs = epochs
@@ -89,7 +99,9 @@ class DNN_Model:
         self.full_connect_dropout = full_connect_dropout
         self.scores = scores
         self.emb_dim = emb_dim
-        self.model = self.create_embedding_model()
+        self.dense_input_len = dense_input_len
+        self.load_only_singleCnt = load_only_singleCnt
+        self.model = self.create_model()
 
 
     def act_blend(self, linear_input):
@@ -137,6 +149,20 @@ class DNN_Model:
         return pred
 
 
+    def create_dense_model(self):
+        """
+        """
+        dense_input = Input(shape=(self.dense_input_len,))
+        norm_dense_input = BatchNormalization()(dense_input)
+        dense_output = self.full_connect_layer(norm_dense_input)
+        proba = Dense(1, activation = 'sigmoid')(dense_output)
+
+        model = Model(dense_input, proba) 
+        model.compile(optimizer='adam', loss='binary_crossentropy', metrics = ['accuracy'])
+
+        return model
+
+
     def create_embedding_model(self):
         """
         """
@@ -164,6 +190,14 @@ class DNN_Model:
         model.compile(optimizer='adam', loss='binary_crossentropy', metrics = ['accuracy'])
 
         return model
+
+    def create_model(self):
+        """
+        """
+        if self.load_only_singleCnt:
+            return self.create_dense_model()
+        else:
+            return self.create_embedding_model()
 
 
 def dense_bn_layer(input_tensor, hn_num, name = None, dropout = True, bn = True):
