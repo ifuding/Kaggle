@@ -46,7 +46,7 @@ def neg_sample(input_data, labels, C = 1):
         pos_ind = np.where(labels == 1)[0]
         neg_ind = np.where(labels == 0)[0]
         accept_rate = float(C * len(pos_ind)) / float(len(neg_ind))
-        neg_select_ind = nrs.choice(neg_ind, len(pos_ind) * C, replace = False)
+        neg_select_ind = nrs.choice(neg_ind, len(pos_ind) * C, replace = True)
         select_ind = np.append(pos_ind, neg_select_ind)
         nrs.shuffle(select_ind)
         sample_data = input_data[select_ind, :]

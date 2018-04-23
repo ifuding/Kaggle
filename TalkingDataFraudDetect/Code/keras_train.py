@@ -44,21 +44,26 @@ SPARSE_FEATURES = {"app": {"max": 768, "emb": 5},
                    "ip": {"max": 364778, "emb": 5},
                    "os": {"max": 956, "emb": 5},
                    "hour": {"max": 23, "emb": 5},
-                   "day": {"max": 10, "emb": 4}
+                   # "day": {"max": 10, "emb": 4}
                    }
 SPARSE_FEATURE_LIST = list(SPARSE_FEATURES.keys())
 print ("SPARSE_FEATURE_LIST: {0}".format(SPARSE_FEATURE_LIST))
 
-DENSE_FEATURE_LIST = ['ipCnt', 'ipAttCnt', 'appCnt', 'appAttCnt', 'deviceCnt', 'deviceAttCnt', 'osCnt', 'osAttCnt', 'channelCnt', 'channelAttCnt', 
-                        'ipAppCnt','ipAppAttCnt','ipDeviceCnt','ipDeviceAttCnt','ipOsCnt','ipOsAttCnt','ipChannelCnt','ipChannelAttCnt','appDeviceCnt','appDeviceAttCnt',
-                        'appOsCnt','appOsAttCnt','appChannelCnt','appChannelAttCnt','deviceOsCnt','deviceOsAttCnt','deviceChannelCnt','deviceChannelAttCnt','osChannelCnt',
-                        'osChannelAttCnt', 
-                        'ipappdeviceCnt','ipappdeviceAttCnt','ipapposCnt','ipapposAttCnt','ipappchannelCnt','ipappchannelAttCnt','ipdeviceosCnt',
-                        'ipdeviceosAttCnt','ipdevicechannelCnt','ipdevicechannelAttCnt','iposchannelCnt','iposchannelAttCnt','appdeviceosCnt','appdeviceosAttCnt',
-                        'appdevicechannelCnt','appdevicechannelAttCnt','apposchannelCnt','apposchannelAttCnt','deviceoschannelCnt','deviceoschannelAttCnt',
-                        'ipappdeviceosCnt','ipappdeviceosAttCnt','ipappdevicechannelCnt','ipappdevicechannelAttCnt','ipapposchannelCnt','ipapposchannelAttCnt',
-                        'ipdeviceoschannelCnt','ipdeviceoschannelAttCnt','appdeviceoschannelCnt','appdeviceoschannelAttCnt']
+CATEGORY_FEATURES = ['app','device','os','channel', 'hour']
+
+DENSE_FEATURE_LIST = [
+'appAttrOverCnt','appchannelAttrOverCnt','appchannelhourAttrOverCnt','appdeviceAttrOverCnt','appdevicechannelAttrOverCnt',
+'appdevicehourAttrOverCnt','appdeviceosAttrOverCnt','apphourAttrOverCnt','apposAttrOverCnt','apposchannelAttrOverCnt',
+'apposhourAttrOverCnt','channelAttrOverCnt','deviceAttrOverCnt','deviceosAttrOverCnt','deviceoschannelAttrOverCnt',
+'deviceoshourAttrOverCnt','hourAttrOverCnt','ipAttrOverCnt','ipappAttrOverCnt','ipappdeviceAttrOverCnt',
+'ipapphourAttrOverCnt','ipapposAttrOverCnt','ipdeviceAttrOverCnt','ipdevicechannelAttrOverCnt','ipdevicehourAttrOverCnt',
+'ipdeviceosAttrOverCnt','iphourAttrOverCnt','iposAttrOverCnt','osAttrOverCnt','oschannelAttrOverCnt','oshourAttrOverCnt',
+'ipdayhour_channelCount','ipapp_channelCount','ipappos_channelCount','ipdaychannel_hourVar','ipappos_hourVar',
+'ipappchannel_dayVar','ipappchannel_hourVar'
+    ]
 print ("DENSE_FEATURE_LIST: {0} {1}".format(len(DENSE_FEATURE_LIST), DENSE_FEATURE_LIST))
+DATA_HEADER = ['ip'] + CATEGORY_FEATURES + ['day'] + DENSE_FEATURE_LIST
+USED_FEATURE_LIST = CATEGORY_FEATURES + DENSE_FEATURE_LIST
 
 class RocAucEvaluation(Callback):
     def __init__(self, validation_data=(), interval=1, batch_interval = 1000000, verbose = 2, \

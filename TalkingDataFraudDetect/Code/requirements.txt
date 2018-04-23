@@ -2,3 +2,4 @@ sklearn
 scipy
 pandas
 numpy
+lightgbm
