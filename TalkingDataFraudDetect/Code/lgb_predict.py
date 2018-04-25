@@ -78,7 +78,7 @@ def find_best_iteration_search(bst):
         del valide_df
         gc.collect()
     with timer("finding best iteration..."):
-        for i in range(100, 1100, 100):
+        for i in range(1500, 1600, 100):
             y_pred = bst.predict(valide_data, num_iteration=i)
             score = metrics.roc_auc_score(valide_label, y_pred)
             print ("Iteration: {0} AUC: {1}".format(i, score))
@@ -113,7 +113,7 @@ def predict_test(bst):
 
 if __name__ == "__main__":
     # load model to predict
-    bst = lgb.Booster(model_file= FLAGS.output_model_path + 'model_2018_04_21_17_11_38.txt')
+    bst = lgb.Booster(model_file= FLAGS.output_model_path + 'model_2018_04_24_07_41_16.txt')
     if FLAGS.search_best_iteration:
         find_best_iteration_search(bst)
     else:

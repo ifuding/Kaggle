@@ -115,7 +115,7 @@ def load_data():
             else:
                 valide_data_path = path + path_prefix + ".csv"
                 valide_df = pd.read_csv(valide_data_path, dtype=dtypes, header = None, sep = '\t',
-    names=['is_attributed'] + keras_train.DATA_HEADER, nrows = 10000,
+    names=['is_attributed'] + keras_train.DATA_HEADER, #nrows = 10000,
     usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
             print(valide_df.info())
 

@@ -52,13 +52,8 @@ print ("SPARSE_FEATURE_LIST: {0}".format(SPARSE_FEATURE_LIST))
 CATEGORY_FEATURES = ['app','device','os','channel', 'hour']
 
 DENSE_FEATURE_LIST = [
-'appAttrOverCnt','appchannelAttrOverCnt','appchannelhourAttrOverCnt','appdeviceAttrOverCnt','appdevicechannelAttrOverCnt',
-'appdevicehourAttrOverCnt','appdeviceosAttrOverCnt','apphourAttrOverCnt','apposAttrOverCnt','apposchannelAttrOverCnt',
-'apposhourAttrOverCnt','channelAttrOverCnt','deviceAttrOverCnt','deviceosAttrOverCnt','deviceoschannelAttrOverCnt',
-'deviceoshourAttrOverCnt','hourAttrOverCnt','ipAttrOverCnt','ipappAttrOverCnt','ipappdeviceAttrOverCnt',
-'ipapphourAttrOverCnt','ipapposAttrOverCnt','ipdeviceAttrOverCnt','ipdevicechannelAttrOverCnt','ipdevicehourAttrOverCnt',
-'ipdeviceosAttrOverCnt','iphourAttrOverCnt','iposAttrOverCnt','osAttrOverCnt','oschannelAttrOverCnt','oshourAttrOverCnt',
-'ipdayhour_channelCount','ipapp_channelCount','ipappos_channelCount','ipdaychannel_hourVar','ipappos_hourVar',
+'ipdayhourCount','ipappCount','ipapposCount','iphourCount','ip_channelNunique','ipday_hourNunique','ip_appNunique',
+'ipapp_osNunique','ip_deviceNunique','app_channelNunique','ipdeviceos_appNunique','ipdaychannel_hourVar','ipappos_hourVar',
 'ipappchannel_dayVar','ipappchannel_hourVar'
     ]
 print ("DENSE_FEATURE_LIST: {0} {1}".format(len(DENSE_FEATURE_LIST), DENSE_FEATURE_LIST))
