@@ -49,16 +49,22 @@ SPARSE_FEATURES = {"app": {"max": 768, "emb": 5},
 SPARSE_FEATURE_LIST = list(SPARSE_FEATURES.keys())
 print ("SPARSE_FEATURE_LIST: {0}".format(SPARSE_FEATURE_LIST))
 
-CATEGORY_FEATURES = ['app','device','os','channel', 'hour']
+CATEGORY_FEATURES = ['app','device','os','channel','day','hour','minute','second']
 
 DENSE_FEATURE_LIST = [
-'ipdayhourCount','ipappCount','ipapposCount','iphourCount','ip_channelNunique','ipday_hourNunique','ip_appNunique',
-'ipapp_osNunique','ip_deviceNunique','app_channelNunique','ipdeviceos_appNunique','ipdaychannel_hourVar','ipappos_hourVar',
-'ipappchannel_dayVar','ipappchannel_hourVar'
+'ipdayhourCount','ipappCount','ipapposCount','iphourCount','ipdeviceosCumcount','ipappCumcount',
+'ipchannelCumcount','ipCumcount','ip_channelNunique','ipday_hourNunique','ip_appNunique',
+'ipapp_osNunique','ip_deviceNunique','app_channelNunique','ipdeviceos_appNunique','ipdaychannel_hourVar',
+'ipappos_hourVar','ipappchannel_dayVar','ipappchannel_hourVar'
     ]
 print ("DENSE_FEATURE_LIST: {0} {1}".format(len(DENSE_FEATURE_LIST), DENSE_FEATURE_LIST))
-DATA_HEADER = ['ip'] + CATEGORY_FEATURES + ['day'] + DENSE_FEATURE_LIST
-USED_FEATURE_LIST = CATEGORY_FEATURES + DENSE_FEATURE_LIST
+DATA_HEADER = ['ip'] + CATEGORY_FEATURES + DENSE_FEATURE_LIST
+USED_FEATURE_LIST = CATEGORY_FEATURES + [
+'ipdayhourCount','ipappCount','ipapposCount','iphourCount','ipdeviceosCumcount','ipappCumcount',
+'ipchannelCumcount','ipCumcount','ip_channelNunique','ipday_hourNunique','ip_appNunique',
+'ipapp_osNunique','ip_deviceNunique','ipdeviceos_appNunique','ipdaychannel_hourVar',
+'ipappos_hourVar','ipappchannel_dayVar','ipappchannel_hourVar'
+    ]
 
 class RocAucEvaluation(Callback):
     def __init__(self, validation_data=(), interval=1, batch_interval = 1000000, verbose = 2, \

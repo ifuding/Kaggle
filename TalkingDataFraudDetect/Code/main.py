@@ -57,7 +57,7 @@ def load_data():
 
     dtypes = {
 'ip' : 'uint32', 'app' : 'uint16', 'device' : 'uint16', 'os' : 'uint16', 'channel' : 'uint16', 'is_attributed' : 'uint8', 
-'click_id' : 'uint32', 'day' : 'uint8', 'hour' : 'uint8', 'yesterday' : 'uint8',
+'click_id' : 'uint32', 'day' : 'uint8', 'hour' : 'uint8', 'yesterday' : 'uint8', 'minute' : 'uint8', 'second' : 'uint8'
 # 'ipCnt' : 'uint32', 'ipAttCnt' : 'uint16', 'appCnt' : 'uint32', 'appAttCnt' : 'uint32', 'deviceCnt' : 'uint32', 'deviceAttCnt' : 'uint32',
 #  'osCnt' : 'uint32', 'osAttCnt' : 'uint32', 'channelCnt' : 'uint32', 'channelAttCnt' : 'uint32',
 #  'ipappCnt' : 'uint32', 'ipappAttCnt' : 'uint16', 'ipdeviceCnt' : 'uint32', 'ipdeviceAttCnt': 'uint16', 'iposCnt' : 'uint32', 'iposAttCnt' : 'uint16',
