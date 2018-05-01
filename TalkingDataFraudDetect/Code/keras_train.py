@@ -44,27 +44,26 @@ SPARSE_FEATURES = {"app": {"max": 768, "emb": 5},
                    "ip": {"max": 364778, "emb": 5},
                    "os": {"max": 956, "emb": 5},
                    "hour": {"max": 23, "emb": 5},
-                   # "day": {"max": 10, "emb": 4}
+                   "day": {"max": 10, "emb": 4},
+                   'minute': {"max": 60, "emb": 5},
+                   'second': {"max": 60, "emb": 5},
                    }
 SPARSE_FEATURE_LIST = list(SPARSE_FEATURES.keys())
 print ("SPARSE_FEATURE_LIST: {0}".format(SPARSE_FEATURE_LIST))
 
 CATEGORY_FEATURES = ['app','device','os','channel','day','hour','minute','second']
-
 DENSE_FEATURE_LIST = [
-'ipdayhourCount','ipappCount','ipapposCount','iphourCount','ipdeviceosCumcount','ipappCumcount',
-'ipchannelCumcount','ipCumcount','ip_channelNunique','ipday_hourNunique','ip_appNunique',
-'ipapp_osNunique','ip_deviceNunique','app_channelNunique','ipdeviceos_appNunique','ipdaychannel_hourVar',
-'ipappos_hourVar','ipappchannel_dayVar','ipappchannel_hourVar'
+'ipdayhourCount','ipappCount','ipapposCount','iphourCount','ipdeviceosCumCount','ipappCumCount','ipCumCount',
+'ipdeviceosdayCumCount','ipappdayCumCount','ipdayCumCount','ipappdeviceoschannelNextClick','iposdeviceNextClick',
+'iposdeviceappNextClick','ipappNextClick','ipapposNextClick','ipappdeviceNextClick','ipappdeviceoschannelReverCum',
+'iposdeviceappReverCum','ipappReverCum','ipapposReverCum','ipappdeviceReverCum','ipappos_hourVar','ipappchannel_dayVar',
+'ipappchannel_hourVar','ipappos_hourStd','ipappchannel_dayStd','ipappchannel_hourStd','ip_channelNunique','ipday_hourNunique',
+'ip_appNunique','ipapp_osNunique','ip_deviceNunique','ipdeviceos_appNunique'
     ]
+DENSE_FEATURE_TYPE = 'uint16'
 print ("DENSE_FEATURE_LIST: {0} {1}".format(len(DENSE_FEATURE_LIST), DENSE_FEATURE_LIST))
 DATA_HEADER = ['ip'] + CATEGORY_FEATURES + DENSE_FEATURE_LIST
-USED_FEATURE_LIST = CATEGORY_FEATURES + [
-'ipdayhourCount','ipappCount','ipapposCount','iphourCount','ipdeviceosCumcount','ipappCumcount',
-'ipchannelCumcount','ipCumcount','ip_channelNunique','ipday_hourNunique','ip_appNunique',
-'ipapp_osNunique','ip_deviceNunique','ipdeviceos_appNunique','ipdaychannel_hourVar',
-'ipappos_hourVar','ipappchannel_dayVar','ipappchannel_hourVar'
-    ]
+USED_FEATURE_LIST = CATEGORY_FEATURES + DENSE_FEATURE_LIST
 
 class RocAucEvaluation(Callback):
     def __init__(self, validation_data=(), interval=1, batch_interval = 1000000, verbose = 2, \
@@ -126,6 +125,13 @@ class DNN_Model:
                 full_connect = Dropout(self.full_connect_dropout)(full_connect)
         return full_connect
 
+    def DNN_DataSet(self, data):
+        """
+        input shape: batch * n_feature
+        output shape: batch * [sparse0, spare1, ..., sparsen, dense_features]
+        """
+        return list(data[:, :len(CATEGORY_FEATURES)].transpose()) + [data[:, len(CATEGORY_FEATURES):]]
+
 
     def train(self, train_part, train_part_label, valide_part, valide_part_label):
         """
@@ -133,15 +139,17 @@ class DNN_Model:
         """
         print("-----DNN training-----")
 
+        DNN_Train_Data = self.DNN_DataSet(train_part)
+        DNN_Valide_Data = self.DNN_DataSet(valide_part)
         callbacks = [
                 EarlyStopping(monitor='val_loss', patience=3, verbose=0),
-                RocAucEvaluation(validation_data=(valide_part, valide_part_label), interval=1, \
+                RocAucEvaluation(validation_data=(DNN_Valide_Data, valide_part_label), interval=1, \
                     batch_interval = self.batch_interval, scores = self.scores)
                 ]
 
-        self.model.fit(train_part, train_part_label, batch_size=self.batch_size, epochs=self.epochs,
+        self.model.fit(DNN_Train_Data, train_part_label, batch_size=self.batch_size, epochs=self.epochs,
                     shuffle=True, verbose=2,
-                    validation_data=(valide_part, valide_part_label)
+                    validation_data=(DNN_Valide_Data, valide_part_label)
                     , callbacks=callbacks)
         return self.model
 
@@ -151,7 +159,7 @@ class DNN_Model:
         Keras Training
         """
         print("-----DNN Test-----")
-        pred = self.model.predict(test_part, batch_size=1024, verbose=verbose)
+        pred = self.model.predict(self.DNN_DataSet(test_part), batch_size=1024, verbose=verbose)
         return pred
 
 
@@ -176,7 +184,7 @@ class DNN_Model:
         sparse_input_list = []
         merge_input_len = 0
         i = 0
-        for sparse_feature in SPARSE_FEATURES:
+        for sparse_feature in CATEGORY_FEATURES:
             sparse_input = Input(shape=(1,))
             sparse_input_list.append(sparse_input)
             max_id = SPARSE_FEATURES[sparse_feature]["max"]
@@ -187,12 +195,14 @@ class DNN_Model:
             sparse_emb_list.append(sparse_embedding)
             merge_input_len += emb_dim
         
-        # dense_input = Input(shape=(len(CONTINUOUS_COLUMNS),))
-        merge_input = Concatenate()(sparse_emb_list)
+        dense_input = Input(shape=(len(DENSE_FEATURE_LIST),))
+        norm_dense_input = BatchNormalization()(dense_input)
+
+        merge_input = Concatenate()(sparse_emb_list + [norm_dense_input])
         dense_output = self.full_connect_layer(merge_input)
         proba = Dense(1, activation = 'sigmoid')(dense_output)
 
-        model = Model(sparse_input_list, proba) 
+        model = Model(sparse_input_list + [dense_input], proba) 
         model.compile(optimizer='adam', loss='binary_crossentropy', metrics = ['accuracy'])
 
         return model
@@ -200,10 +210,10 @@ class DNN_Model:
     def create_model(self):
         """
         """
-        if self.load_only_singleCnt:
-            return self.create_dense_model()
-        else:
-            return self.create_embedding_model()
+        # if self.load_only_singleCnt:
+        #     return self.create_dense_model()
+        # else:
+        return self.create_embedding_model()
 
 
 def dense_bn_layer(input_tensor, hn_num, name = None, dropout = True, bn = True):

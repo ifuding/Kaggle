@@ -47,8 +47,11 @@ flags.DEFINE_bool("lcc_sample", False, "Whether to do lcc sample")
 flags.DEFINE_integer("sample_C", 1, "sample rate")
 flags.DEFINE_bool("load_only_singleCnt", False, "Whether to load only singleCnt")
 flags.DEFINE_bool("log_transform", False, "Whether to do log transform")
+flags.DEFINE_bool("split_train_val", False, "Whether to split train and validate")
+flags.DEFINE_integer("train_eval_len", 25000000, "train_eval_len")
+flags.DEFINE_integer("eval_len", 2500000, "eval_len")
+flags.DEFINE_bool("test_for_train", False, "Whether to use test data for train")
 FLAGS = flags.FLAGS
-
 
 def load_data():
     """
@@ -57,56 +60,38 @@ def load_data():
 
     dtypes = {
 'ip' : 'uint32', 'app' : 'uint16', 'device' : 'uint16', 'os' : 'uint16', 'channel' : 'uint16', 'is_attributed' : 'uint8', 
-'click_id' : 'uint32', 'day' : 'uint8', 'hour' : 'uint8', 'yesterday' : 'uint8', 'minute' : 'uint8', 'second' : 'uint8'
-# 'ipCnt' : 'uint32', 'ipAttCnt' : 'uint16', 'appCnt' : 'uint32', 'appAttCnt' : 'uint32', 'deviceCnt' : 'uint32', 'deviceAttCnt' : 'uint32',
-#  'osCnt' : 'uint32', 'osAttCnt' : 'uint32', 'channelCnt' : 'uint32', 'channelAttCnt' : 'uint32',
-#  'ipappCnt' : 'uint32', 'ipappAttCnt' : 'uint16', 'ipdeviceCnt' : 'uint32', 'ipdeviceAttCnt': 'uint16', 'iposCnt' : 'uint32', 'iposAttCnt' : 'uint16',
-#  'ipchannelCnt' : 'uint32', 'ipchannelAttCnt' : 'uint16', 'appdeviceCnt' : 'uint32', 'appdeviceAttCnt' : 'uint32', 'apposCnt' : 'uint32', 'apposAttCnt' : 'uint16',
-#  'appchannelCnt' : 'uint32', 'appchannelAttCnt' : 'uint32', 'deviceosCnt' : 'uint32', 'deviceosAttCnt' : 'uint32', 'devicechannelCnt' : 'uint32', 'devicechannelAttCnt' : 'uint16',
-#  'oschannelCnt' : 'uint32', 'oschannelAttCnt' : 'uint16',
-#  'ipappdeviceCnt' : 'uint32', 'ipappdeviceAttCnt' : 'uint16',  'ipapposCnt' : 'uint16', 'ipapposAttCnt' : 'uint16',  'ipappchannelCnt' : 'uint32', 'ipappchannelAttCnt' : 'uint16', 
-#  'ipdeviceosCnt' : 'uint32', 'ipdeviceosAttCnt' : 'uint16', 'ipdevicechannelCnt' : 'uint32', 'ipdevicechannelAttCnt' : 'uint16',  'iposchannelCnt' : 'uint16', 'iposchannelAttCnt' : 'uint8',  
-#  'appdeviceosCnt' : 'uint32', 'appdeviceosAttCnt' : 'uint16',  'appdevicechannelCnt' : 'uint32', 'appdevicechannelAttCnt': 'uint16',  'apposchannelCnt' : 'uint32', 'apposchannelAttCnt' : 'uint16', 
-#  'deviceoschannelCnt' : 'uint32', 'deviceoschannelAttCnt' : 'uint16', 
-#  'ipappdeviceosCnt' : 'uint16', 'ipappdeviceosAttCnt' : 'uint16',  'ipappdevicechannelCnt' : 'uint32', 'ipappdevicechannelAttCnt' : 'uint16',  'ipapposchannelCnt' : 'uint16', 'ipapposchannelAttCnt' : 'uint8', 
-#  'ipdeviceoschannelCnt' : 'uint16', 'ipdeviceoschannelAttCnt' : 'uint8',  'appdeviceoschannelCnt' : 'uint32', 'appdeviceoschannelAttCnt' : 'uint16',
-#  'hourCnt' : 'uint32', 'hourAttCnt' : 'uint16', 'iphourCnt' : 'uint16', 'iphourAttCnt' : 'uint8',  'apphourCnt' : 'uint32', 'apphourAttCnt' : 'uint16',  'devicehourCnt' : 'uint32', 'devicehourAttCnt' : 'uint16', 
-#  'oshourCnt' : 'uint32', 'oshourAttCnt' : 'uint16', 'channelhourCnt' : 'uint32', 'channelhourAttCnt' : 'uint16', 
-#  'ipapphourCnt' : 'uint16', 'ipapphourAttCnt' : 'uint8',  'ipdevicehourCnt' : 'uint16', 'ipdevicehourAttCnt' : 'uint8',  'iposhourCnt' : 'uint16', 'iposhourAttCnt' : 'uint8',  'ipchannelhourCnt' : 'uint16', 
-#  'ipchannelhourAttCnt' : 'uint8', 'appdevicehourCnt' : 'uint32', 'appdevicehourAttCnt' : 'uint16',  'apposhourCnt' : 'uint32', 'apposhourAttCnt' : 'uint16', 'appchannelhourCnt' : 'uint32', 'appchannelhourAttCnt' : 'uint16', 
-#  'deviceoshourCnt' : 'uint32', 'deviceoshourAttCnt' : 'uint16',  'devicechannelhourCnt' : 'uint32', 'devicechannelhourAttCnt' : 'uint16',  'oschannelhourCnt' : 'uint32', 'oschannelhourAttCnt' : 'uint16',
-#  'ipAttrOverCnt' : 'uint16', 'appAttrOverCnt' : 'uint16',  'deviceAttrOverCnt' : 'uint16', 'osAttrOverCnt' : 'uint16',  'channelAttrOverCnt' : 'uint16', 'hourAttrOverCnt' : 'uint16', 
-#  'ipappAttrOverCnt' : 'uint16', 'ipdeviceAttrOverCnt' : 'uint16',  'iposAttrOverCnt' : 'uint16', 'ipchannelAttrOverCnt' : 'uint16',  'iphourAttrOverCnt' : 'uint16', 'appdeviceAttrOverCnt' : 'uint16', 
-#  'apposAttrOverCnt' : 'uint16', 'appchannelAttrOverCnt' : 'uint16', 'apphourAttrOverCnt' : 'uint16', 'deviceosAttrOverCnt' : 'uint16', 'devicechannelAttrOverCnt' : 'uint16', 'devicehourAttrOverCnt' : 'uint16', 
-#  'oschannelAttrOverCnt' : 'uint16', 'oshourAttrOverCnt' : 'uint16', 'channelhourAttrOverCnt' : 'uint16',
-#  'ipappdeviceAttrOverCnt':'uint16', 'ipapposAttrOverCnt':'uint16', 'ipappchannelAttrOverCnt':'uint16', 'ipapphourAttrOverCnt':'uint16', 'ipdeviceosAttrOverCnt':'uint16', 'ipdevicechannelAttrOverCnt':'uint16', 
-#  'ipdevicehourAttrOverCnt':'uint16', 'iposchannelAttrOverCnt':'uint16', 'iposhourAttrOverCnt':'uint16', 'ipchannelhourAttrOverCnt':'uint16', 'appdeviceosAttrOverCnt':'uint16', 'appdevicechannelAttrOverCnt':'uint16', 
-#  'appdevicehourAttrOverCnt':'uint16', 'apposchannelAttrOverCnt':'uint16', 'apposhourAttrOverCnt':'uint16', 'appchannelhourAttrOverCnt':'uint16', 'deviceoschannelAttrOverCnt':'uint16', 'deviceoshourAttrOverCnt':'uint16', 
-#  'devicechannelhourAttrOverCnt':'uint16', 'oschannelhour' : 'uint16',
+'click_id' : 'uint32', 'day' : 'uint8', 'hour' : 'uint8', 'yesterday' : 'uint8', 'minute' : 'uint8', 'second' : 'uint8',
+'id' : 'uint32', 'is_attributed_test' : 'float32'
             }
+    DENSE_FEATURE_TYPE = keras_train.DENSE_FEATURE_TYPE
     for dense_feature in keras_train.DENSE_FEATURE_LIST:
-        dtypes[dense_feature] = 'uint16'
+        dtypes[dense_feature] = DENSE_FEATURE_TYPE
 
     with timer("loading train data"):
         print('loading train data...')
-        if FLAGS.load_only_singleCnt:
-            path_prefix = "train_part_Cnt_Neg20"
+        if FLAGS.split_train_val:
+            path_prefix = "train_Cnt_Id"
         else:
-            path_prefix = "train"
+            path_prefix = "train_part_Cnt_Neg20"
         if FLAGS.debug:
             train_data_path = path + path_prefix + "_Top.ss.csv"
             train_df = pd.read_csv(train_data_path, dtype=dtypes, 
             usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
         else:
             train_data_path = path + path_prefix + ".csv"
-            train_df = pd.read_csv(train_data_path, dtype=dtypes, header = None, sep = '\t', 
-    names=['is_attributed'] + keras_train.DATA_HEADER, 
+            if FLAGS.split_train_val:
+                train_df = pd.read_csv(train_data_path, dtype=dtypes, header = None, sep = '\t', 
+    names=['id', 'is_attributed'] + keras_train.DATA_HEADER, skiprows=range(0,184903890-FLAGS.train_eval_len),
     usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
+            else:
+                train_df = pd.read_csv(train_data_path, dtype=dtypes, header = None, sep = '\t', 
+        names=['id', 'is_attributed'] + keras_train.DATA_HEADER, 
+        usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
         print(train_df.info())
 
     with timer("loading valide data"):
         print('loading valide data...')
-        if FLAGS.load_only_singleCnt:
+        if not FLAGS.split_train_val:
             path_prefix = "valide_Cnt"
             if FLAGS.debug:
                 valide_data_path = path + path_prefix + "_Top.ss.csv"
@@ -115,24 +100,27 @@ def load_data():
             else:
                 valide_data_path = path + path_prefix + ".csv"
                 valide_df = pd.read_csv(valide_data_path, dtype=dtypes, header = None, sep = '\t',
-    names=['is_attributed'] + keras_train.DATA_HEADER, #nrows = 10000,
+    names=['id', 'is_attributed'] + keras_train.DATA_HEADER, #nrows = 10000,
     usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
             print(valide_df.info())
 
     with timer("loading test data"):
         print('loading test data...')
-        if FLAGS.load_only_singleCnt:
-            path_prefix = "test_Cnt"
+        if FLAGS.test_for_train:
+            path_prefix = "test_Cnt_ForTrain"
         else:
-            path_prefix = "test"
+            path_prefix = "test_Cnt"
         if FLAGS.debug:
             test_data_path = path + path_prefix + "_Top.ss.csv"
             test_df = pd.read_csv(test_data_path, dtype=dtypes, usecols = ['click_id'] + keras_train.USED_FEATURE_LIST)
         else:
             test_data_path = path + path_prefix + ".csv"
             test_df = pd.read_csv(test_data_path, dtype=dtypes, header = None, sep = '\t', 
-        names=['click_id'] + keras_train.DATA_HEADER, nrows = 10000,
+        names=['id', 'click_id'] + keras_train.DATA_HEADER, nrows = 10000,
         usecols = ['click_id'] + keras_train.USED_FEATURE_LIST)
+        if FLAGS.test_for_train:
+            train_df=train_df.append(test_df[['is_attributed'] + keras_train.USED_FEATURE_LIST])
+            test_df = test_df[:100000]
         print(test_df.info())
         gc.collect()
 
@@ -147,47 +135,25 @@ def load_data():
         #     print ("{0} {1} {2}".format(col, len(uniq), uniq.max()))
         # exit(0)
 
-    # train_df = gen_features(train_df)
-
-    # train_df.drop(["click_time"], axis = 1, inplace = True)
-    # print("vars and data type: ")
-    # train_df.info()
-
-    # # np.save("train_test_df.npy", train_df[predictors].values)
-    # unit_size = train_df.size #(train_df.size // 4) + 1
-    # begin = 0
-    # partition = 0
-    # try:
-    #     while begin < train_df.size:
-    #         train_df.iloc[begin: min(train_df.size, begin + unit_size)].to_pickle( \
-    #                 "train_test_df_" + str(partition) + ".pkl", compression = "bz2")
-    #         begin += unit_size
-    #         partition += 1
-    # finally:
-    #     print ("Save failed!")
-    #     pass
     if FLAGS.load_only_singleCnt:
-        train_data = train_df[keras_train.USED_FEATURE_LIST].values.astype(np.uint16)
+        train_data = train_df[keras_train.USED_FEATURE_LIST].values.astype(DENSE_FEATURE_TYPE)
         train_label = train_df['is_attributed'].values.astype(np.uint8)
-        print ("train type {0}".format(train_data.dtype))
-        pos_cnt = train_label.sum()
-        neg_cnt = len(train_label) - pos_cnt
-        print ("train data pos : {0} neg : {1}".format(pos_cnt, neg_cnt))
         del train_df
         gc.collect()
-        valide_data = valide_df[keras_train.USED_FEATURE_LIST].values.astype(np.uint16)
-        valide_label = valide_df['is_attributed'].values.astype(np.uint8)
-        print ("valide type {0}".format(valide_data.dtype))
-        pos_cnt = valide_label.sum()
-        neg_cnt = len(valide_label) - pos_cnt
-        print ("valide data pos : {0} neg : {1}".format(pos_cnt, neg_cnt))
-        del valide_df
-        gc.collect()
-        test_data = test_df[keras_train.USED_FEATURE_LIST].values.astype(np.uint16)
+        if FLAGS.split_train_val:
+            train_len = len(train_label)
+            valide_data = train_data[train_len - FLAGS.eval_len:]
+            valide_label = train_label[train_len - FLAGS.eval_len:]
+            train_data = train_data[:train_len - FLAGS.eval_len]
+            train_label = train_label[:train_len - FLAGS.eval_len]
+        else:
+            valide_data = valide_df[keras_train.USED_FEATURE_LIST].values.astype(DENSE_FEATURE_TYPE)
+            valide_label = valide_df['is_attributed'].values.astype(np.uint8)
+            del valide_df
+            gc.collect()
+        test_data = test_df[keras_train.USED_FEATURE_LIST].values.astype(DENSE_FEATURE_TYPE)
         test_id = test_df['click_id'].astype('uint32').values.astype(np.uint32)
-        print ("test type {0}".format(test_data.dtype))
         del test_df
-        gc.collect()
     else:
         # valide_len = len_train // 5
         train_data = train_df[train_df["day"] != 9][:len_train][keras_train.SPARSE_FEATURE_LIST].values
@@ -207,9 +173,15 @@ def load_data():
         train_data = (np.log(train_data) * 10000).astype(np.uint32)
         valide_data = (np.log(valide_data) * 10000).astype(np.uint32)
         test_data = (np.log(test_data) * 10000).astype(np.uint32)
-    print("train size: ", len(train_data))
-    print("valid size: ", len(valide_data))
-    print("test size : ", len(test_data))
+    pos_cnt = train_label.sum()
+    neg_cnt = len(train_label) - pos_cnt
+    print ("train type: {0} train size: {1} train data pos: {2} neg: {3}".format(
+            train_data.dtype, len(train_data), pos_cnt, neg_cnt))
+    pos_cnt = valide_label.sum()
+    neg_cnt = len(valide_label) - pos_cnt
+    print ("valide type: {0} valide size: {1} valide data pos: {2} neg: {3}".format(
+            valide_data.dtype, len(valide_data), pos_cnt, neg_cnt))
+    print ("test type: {0} test size: {1}".format(test_data.dtype, len(test_data)))
     return train_data, train_label, test_data, test_id, valide_data, valide_label, weight
 
 
@@ -235,8 +207,12 @@ def sub(mdoels, stacking_data = None, stacking_label = None, stacking_test_data 
         sub_re.to_csv(sub_name, index=False)
 
         # save model to file
-        model_name = tmp_model_dir + "model" + time_label + ".txt"
-        models[0][0].save_model(model_name)
+        if (models[0][1] == 'l'):
+            model_name = tmp_model_dir + "model" + ".txt"
+            models[0][0].save_model(model_name)
+        elif (models[0][1] == 'k'):
+            model_name = tmp_model_dir + "model" + ".h5"
+            models[0][0].model.save(model_name)
 
         scores_text_frame = pd.DataFrame(scores_text, columns = ["score_text"])
         score_text_file = tmp_model_dir + "score_text" + time_label + ".csv"

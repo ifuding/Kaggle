@@ -43,45 +43,62 @@ flags.DEFINE_bool("load_only_singleCnt", False, "Whether to load only singleCnt"
 flags.DEFINE_bool("log_transform", False, "Whether to do log transform")
 flags.DEFINE_bool("search_best_iteration", True, "Whether to search best iteration")
 flags.DEFINE_integer("best_iteration", 1, "best iteration")
+flags.DEFINE_string('search_iterations', "100,1500,100", 'search iterations')
+flags.DEFINE_string('input-previous-model-path', "../../Data/", 'data dir override')
+flags.DEFINE_bool("split_train_val", False, "Whether to split train and validate")
+flags.DEFINE_integer("train_eval_len", 25000000, "train_eval_len")
+flags.DEFINE_integer("eval_len", 2500000, "eval_len")
 FLAGS = flags.FLAGS
 
 path = FLAGS.input_training_data_path
 dtypes = {
 'ip' : 'uint32', 'app' : 'uint16', 'device' : 'uint16', 'os' : 'uint16', 'channel' : 'uint16', 'is_attributed' : 'uint8', 
-'click_id' : 'uint32', 'day' : 'uint8', 'hour' : 'uint8', 'yesterday' : 'uint8',
+'click_id' : 'uint32', 'day' : 'uint8', 'hour' : 'uint8', 'yesterday' : 'uint8', 'minute' : 'uint8', 'second' : 'uint8',
+'id' : 'uint32',
     }
+DENSE_FEATURE_TYPE = keras_train.DENSE_FEATURE_TYPE
 for dense_feature in keras_train.DENSE_FEATURE_LIST:
-    dtypes[dense_feature] = 'uint16'
+    dtypes[dense_feature] = DENSE_FEATURE_TYPE
 
 def find_best_iteration_search(bst):
     """
     """
     with timer("loading valide data"):
         print('loading valide data...')
-        path_prefix = "valide_Cnt"
+        if FLAGS.split_train_val:
+            path_prefix = "train_Cnt_Id"
+        else:
+            path_prefix = "valide_Cnt"
         if FLAGS.debug:
             valide_data_path = path + path_prefix + "_Top.ss.csv"
             valide_df = pd.read_csv(valide_data_path, dtype=dtypes,
             usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
         else:
             valide_data_path = path + path_prefix + ".csv"
-            valide_df = pd.read_csv(valide_data_path, dtype=dtypes, header = None, sep = '\t',
-            names=['is_attributed'] + keras_train.DATA_HEADER,
-            usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
+            if FLAGS.split_train_val:
+                valide_df = pd.read_csv(valide_data_path, dtype=dtypes, header = None, sep = '\t',
+                    names=['id', 'is_attributed'] + keras_train.DATA_HEADER, skiprows=range(0,184903890-FLAGS.eval_len),
+                    usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
+            else:
+                valide_df = pd.read_csv(valide_data_path, dtype=dtypes, header = None, sep = '\t',
+                    names=['id', 'is_attributed'] + keras_train.DATA_HEADER,
+                    usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
         print(valide_df.info())
-        valide_data = valide_df[keras_train.USED_FEATURE_LIST].values.astype(np.uint16)
+        valide_data = valide_df[keras_train.USED_FEATURE_LIST].values.astype(DENSE_FEATURE_TYPE)
         valide_label = valide_df['is_attributed'].values.astype(np.uint8)
-        print ("valide type {0}".format(valide_data.dtype))
-        pos_cnt = valide_label.sum()
-        neg_cnt = len(valide_label) - pos_cnt
-        print ("valide data pos : {0} neg : {1}".format(pos_cnt, neg_cnt))
         del valide_df
         gc.collect()
+        pos_cnt = valide_label.sum()
+        neg_cnt = len(valide_label) - pos_cnt
+        print ("valide type: {0} valide size: {1} valide data pos: {2} neg: {3}".format(
+                valide_data.dtype, len(valide_data), pos_cnt, neg_cnt))
     with timer("finding best iteration..."):
-        for i in range(800, 1600, 200):
+        search_iterations = [int(ii.strip()) for ii in FLAGS.search_iterations.split(',')]
+        for i in range(search_iterations[0], search_iterations[1], search_iterations[2]):
             y_pred = bst.predict(valide_data, num_iteration=i)
             score = metrics.roc_auc_score(valide_label, y_pred)
-            print ("Iteration: {0} AUC: {1}".format(i, score))
+            loss = metrics.log_loss(valide_label, y_pred)
+            print ("Iteration: {0} AUC: {1} Logloss: {2}".format(i, score, loss))
 
 
 def predict_test(bst):
@@ -94,11 +111,11 @@ def predict_test(bst):
         else:
             test_data_path = path + path_prefix + ".csv"
             test_df = pd.read_csv(test_data_path, dtype=dtypes, header = None, sep = '\t', 
-        names=['click_id'] + keras_train.DATA_HEADER, #nrows = 10000,
+        names=['id', 'click_id'] + keras_train.DATA_HEADER, #nrows = 10000,
         usecols = ['click_id'] + keras_train.USED_FEATURE_LIST)
         print(test_df.info())
-        test_data = test_df[keras_train.USED_FEATURE_LIST].values.astype(np.uint16)
-        test_id = test_df['click_id'].astype('uint32').values.astype(np.uint32)
+        test_data = test_df[keras_train.USED_FEATURE_LIST].values.astype(DENSE_FEATURE_TYPE)
+        test_id = test_df['click_id'].values #.astype(np.uint32)
         print ("test type {0}".format(test_data.dtype))
         del test_df
         gc.collect()
@@ -113,7 +130,7 @@ def predict_test(bst):
 
 if __name__ == "__main__":
     # load model to predict
-    bst = lgb.Booster(model_file= FLAGS.output_model_path + 'model_2018_04_25_13_16_57.txt')
+    bst = lgb.Booster(model_file= FLAGS.input_previous_model_path + '/model.txt')
     if FLAGS.search_best_iteration:
         find_best_iteration_search(bst)
     else:
