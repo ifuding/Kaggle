@@ -19,13 +19,6 @@ import os
 import shutil
 from lcc_sample import neg_sample
 
-target = 'is_attributed'
-predictors = ['app','device','os', 'channel', 'hour', 'day', 
-              'ip_tcount', 'ip_tchan_count', 'ip_app_count',
-              'ip_app_os_count', 'ip_app_os_var',
-              'ip_app_channel_var_day','ip_app_channel_mean_hour']
-categorical = ['app', 'device', 'os', 'channel', 'hour', 'day']
-
 flags = tf.app.flags
 flags.DEFINE_string('input-training-data-path', "../../Data/", 'data dir override')
 flags.DEFINE_string('output-model-path', ".", 'model dir override')
@@ -51,22 +44,24 @@ flags.DEFINE_bool("split_train_val", False, "Whether to split train and validate
 flags.DEFINE_integer("train_eval_len", 25000000, "train_eval_len")
 flags.DEFINE_integer("eval_len", 2500000, "eval_len")
 flags.DEFINE_bool("test_for_train", False, "Whether to use test data for train")
+flags.DEFINE_bool("search_best_iteration", True, "Whether to search best iteration")
+flags.DEFINE_integer("best_iteration", 1, "best iteration")
+flags.DEFINE_string('search_iterations', "100,1500,100", 'search iterations')
+flags.DEFINE_string('input-previous-model-path', "../../Data/", 'data dir override')
+flags.DEFINE_bool("blend_tune", False, "Whether to tune the blen")
 FLAGS = flags.FLAGS
 
-def load_data():
-    """
-    """
-    path = FLAGS.input_training_data_path
-
-    dtypes = {
+path = FLAGS.input_training_data_path
+dtypes = {
 'ip' : 'uint32', 'app' : 'uint16', 'device' : 'uint16', 'os' : 'uint16', 'channel' : 'uint16', 'is_attributed' : 'uint8', 
 'click_id' : 'uint32', 'day' : 'uint8', 'hour' : 'uint8', 'yesterday' : 'uint8', 'minute' : 'uint8', 'second' : 'uint8',
 'id' : 'uint32', 'is_attributed_test' : 'float32'
-            }
-    DENSE_FEATURE_TYPE = keras_train.DENSE_FEATURE_TYPE
-    for dense_feature in keras_train.DENSE_FEATURE_LIST:
-        dtypes[dense_feature] = DENSE_FEATURE_TYPE
+        }
+DENSE_FEATURE_TYPE = keras_train.DENSE_FEATURE_TYPE
+for dense_feature in keras_train.DENSE_FEATURE_LIST:
+    dtypes[dense_feature] = DENSE_FEATURE_TYPE
 
+def load_train_data():
     with timer("loading train data"):
         print('loading train data...')
         if FLAGS.split_train_val:
@@ -81,14 +76,17 @@ def load_data():
             train_data_path = path + path_prefix + ".csv"
             if FLAGS.split_train_val:
                 train_df = pd.read_csv(train_data_path, dtype=dtypes, header = None, sep = '\t', 
-    names=['id', 'is_attributed'] + keras_train.DATA_HEADER, skiprows=range(0,184903890-FLAGS.train_eval_len),
+    names=['is_attributed'] + keras_train.DATA_HEADER, skiprows=range(0,184903890-FLAGS.train_eval_len),
     usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
             else:
                 train_df = pd.read_csv(train_data_path, dtype=dtypes, header = None, sep = '\t', 
-        names=['id', 'is_attributed'] + keras_train.DATA_HEADER, 
+        names=['is_attributed'] + keras_train.DATA_HEADER, 
         usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
         print(train_df.info())
+    return train_df
 
+
+def load_valide_data():
     with timer("loading valide data"):
         print('loading valide data...')
         if not FLAGS.split_train_val:
@@ -103,7 +101,10 @@ def load_data():
     names=['id', 'is_attributed'] + keras_train.DATA_HEADER, #nrows = 10000,
     usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
             print(valide_df.info())
+    return valide_df
 
+
+def load_test_data():
     with timer("loading test data"):
         print('loading test data...')
         if FLAGS.test_for_train:
@@ -123,18 +124,15 @@ def load_data():
             test_df = test_df[:100000]
         print(test_df.info())
         gc.collect()
+    return test_df
 
-    with timer("Extracting new features"):
-        print('Extracting new features...')
-        if not FLAGS.load_only_singleCnt:
-            train_df['hour'] = pd.to_datetime(train_df.click_time).dt.hour.astype('uint8')
-            train_df['day'] = pd.to_datetime(train_df.click_time).dt.day.astype('uint8')
-            gc.collect()
-        # for col in train_df:
-        #     uniq = train_df[col].unique()
-        #     print ("{0} {1} {2}".format(col, len(uniq), uniq.max()))
-        # exit(0)
 
+def load_data():
+    """
+    """
+    train_df = load_train_data()
+    valide_df = load_valide_data()
+    test_df = load_test_data()
     if FLAGS.load_only_singleCnt:
         train_data = train_df[keras_train.USED_FEATURE_LIST].values.astype(DENSE_FEATURE_TYPE)
         train_label = train_df['is_attributed'].values.astype(np.uint8)

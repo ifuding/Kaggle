@@ -51,18 +51,23 @@ SPARSE_FEATURES = {"app": {"max": 768, "emb": 5},
 SPARSE_FEATURE_LIST = list(SPARSE_FEATURES.keys())
 print ("SPARSE_FEATURE_LIST: {0}".format(SPARSE_FEATURE_LIST))
 
-CATEGORY_FEATURES = ['app','device','os','channel','day','hour','minute','second']
+CATEGORY_FEATURES = ['ip', 'app','device','os','channel','day','hour','minute','second']
 DENSE_FEATURE_LIST = [
 'ipdayhourCount','ipappCount','ipapposCount','iphourCount','ipdeviceosCumCount','ipappCumCount','ipCumCount',
 'ipdeviceosdayCumCount','ipappdayCumCount','ipdayCumCount','ipappdeviceoschannelNextClick','iposdeviceNextClick',
-'iposdeviceappNextClick','ipappNextClick','ipapposNextClick','ipappdeviceNextClick','ipappdeviceoschannelReverCum',
-'iposdeviceappReverCum','ipappReverCum','ipapposReverCum','ipappdeviceReverCum','ipappos_hourVar','ipappchannel_dayVar',
-'ipappchannel_hourVar','ipappos_hourStd','ipappchannel_dayStd','ipappchannel_hourStd','ip_channelNunique','ipday_hourNunique',
-'ip_appNunique','ipapp_osNunique','ip_deviceNunique','ipdeviceos_appNunique'
+'iposdeviceappNextClick','ipappdeviceoschannelReverCum','iposdeviceappReverCum','ipappos_hourVar','ipappchannel_dayVar',
+'ipappchannel_hourVar','ip_channelNunique','ipday_hourNunique','ip_appNunique','ipapp_osNunique','ip_deviceNunique',
+'ipdeviceos_appNunique'
+# 'ipdayhourCount','ipappCount','ipapposCount','iphourCount','ipdeviceosCumCount','ipappCumCount','ipCumCount',
+# 'ipdeviceosdayCumCount','ipappdayCumCount','ipdayCumCount','ipappdeviceoschannelNextClick','iposdeviceNextClick',
+# 'iposdeviceappNextClick','ipappNextClick','ipapposNextClick','ipappdeviceNextClick','ipappdeviceoschannelReverCum',
+# 'iposdeviceappReverCum','ipappReverCum','ipapposReverCum','ipappdeviceReverCum','ipappos_hourVar','ipappchannel_dayVar',
+# 'ipappchannel_hourVar','ipappos_hourStd','ipappchannel_dayStd','ipappchannel_hourStd','ip_channelNunique','ipday_hourNunique',
+# 'ip_appNunique','ipapp_osNunique','ip_deviceNunique','ipdeviceos_appNunique'
     ]
 DENSE_FEATURE_TYPE = 'uint16'
 print ("DENSE_FEATURE_LIST: {0} {1}".format(len(DENSE_FEATURE_LIST), DENSE_FEATURE_LIST))
-DATA_HEADER = ['ip'] + CATEGORY_FEATURES + DENSE_FEATURE_LIST
+DATA_HEADER = CATEGORY_FEATURES + DENSE_FEATURE_LIST
 USED_FEATURE_LIST = CATEGORY_FEATURES + DENSE_FEATURE_LIST
 
 class RocAucEvaluation(Callback):
@@ -79,7 +84,7 @@ class RocAucEvaluation(Callback):
 
     def on_epoch_end(self, epoch, logs={}):
         if epoch % self.interval == 0:
-            y_pred = self.model.predict(self.X_val, verbose=0)
+            y_pred = self.model.predict(self.X_val, verbose=0, batch_size=10240)
             score = metrics.roc_auc_score(self.y_val, y_pred)
             self.scores.append("epoch:{0} {1}".format(epoch + 1, score))
             print("\n ROC-AUC - epoch: %d - score: %.6f \n" % (epoch+1, score))
@@ -142,7 +147,7 @@ class DNN_Model:
         DNN_Train_Data = self.DNN_DataSet(train_part)
         DNN_Valide_Data = self.DNN_DataSet(valide_part)
         callbacks = [
-                EarlyStopping(monitor='val_loss', patience=3, verbose=0),
+                EarlyStopping(monitor='val_loss', patience=30, verbose=0),
                 RocAucEvaluation(validation_data=(DNN_Valide_Data, valide_part_label), interval=1, \
                     batch_interval = self.batch_interval, scores = self.scores)
                 ]
@@ -150,7 +155,9 @@ class DNN_Model:
         self.model.fit(DNN_Train_Data, train_part_label, batch_size=self.batch_size, epochs=self.epochs,
                     shuffle=True, verbose=2,
                     validation_data=(DNN_Valide_Data, valide_part_label)
-                    , callbacks=callbacks)
+                    , callbacks=callbacks
+                    # , class_weight = {0: 1., 1: 50.}
+                    )
         return self.model
 
 
