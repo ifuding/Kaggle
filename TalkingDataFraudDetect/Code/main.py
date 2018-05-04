@@ -18,6 +18,7 @@ import tensorflow as tf
 import os
 import shutil
 from lcc_sample import neg_sample
+from tensorflow.python.keras.models import load_model,Model
 
 flags = tf.app.flags
 flags.DEFINE_string('input-training-data-path', "../../Data/", 'data dir override')
@@ -79,9 +80,14 @@ def load_train_data():
     names=['is_attributed'] + keras_train.DATA_HEADER, skiprows=range(0,184903890-FLAGS.train_eval_len),
     usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
             else:
-                train_df = pd.read_csv(train_data_path, dtype=dtypes, header = None, sep = '\t', 
-        names=['is_attributed'] + keras_train.DATA_HEADER, 
-        usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
+                if FLAGS.stacking:
+                    train_df = pd.read_csv(train_data_path, dtype=dtypes, header = None, sep = '\t', 
+            names=['id', 'is_attributed'] + keras_train.DATA_HEADER, #skiprows=range(0,10000000),
+            usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
+                else:
+                    train_df = pd.read_csv(train_data_path, dtype=dtypes, header = None, sep = '\t', 
+            names=['id', 'is_attributed'] + keras_train.DATA_HEADER, #nrows = 10000000, #skiprows=range(0,10000000),
+            usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
         print(train_df.info())
     return train_df
 
@@ -98,7 +104,7 @@ def load_valide_data():
             else:
                 valide_data_path = path + path_prefix + ".csv"
                 valide_df = pd.read_csv(valide_data_path, dtype=dtypes, header = None, sep = '\t',
-    names=['id', 'is_attributed'] + keras_train.DATA_HEADER, #nrows = 10000,
+    names=['id', 'is_attributed'] + keras_train.DATA_HEADER, # nrows = 10000,
     usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
             print(valide_df.info())
     return valide_df
@@ -125,6 +131,14 @@ def load_test_data():
         print(test_df.info())
         gc.collect()
     return test_df
+
+def gen_stacking_data(in_data):
+    k_model = load_model(FLAGS.input_previous_model_path + '/model.h5')
+    emb_model = Model(inputs = k_model.inputs, outputs = k_model.get_layer(name = 'merge_sparse_emb').output)
+    emb_vector = emb_model.predict(keras_train.DNN_Model.DNN_DataSet(None, in_data), verbose=0, batch_size=10240)
+    k_pred = k_model.predict(keras_train.DNN_Model.DNN_DataSet(None, in_data), verbose=0, batch_size=10240)
+    out_data = np.c_[in_data, emb_vector, k_pred]
+    return out_data
 
 
 def load_data():
@@ -171,6 +185,12 @@ def load_data():
         train_data = (np.log(train_data) * 10000).astype(np.uint32)
         valide_data = (np.log(valide_data) * 10000).astype(np.uint32)
         test_data = (np.log(test_data) * 10000).astype(np.uint32)
+
+    if FLAGS.stacking:
+        train_data = gen_stacking_data(train_data)
+        valide_data = gen_stacking_data(valide_data)
+        test_data = gen_stacking_data(test_data)
+
     pos_cnt = train_label.sum()
     neg_cnt = len(train_label) - pos_cnt
     print ("train type: {0} train size: {1} train data pos: {2} neg: {3}".format(
@@ -188,7 +208,8 @@ def sub(mdoels, stacking_data = None, stacking_label = None, stacking_test_data 
     tmp_model_dir = "./model_dir/"
     if not os.path.isdir(tmp_model_dir):
         os.makedirs(tmp_model_dir, exist_ok=True)
-    if FLAGS.stacking:
+    if False:
+        #FLAGS.stacking:
         np.save(os.path.join(tmp_model_dir, "stacking_train_data.npy"), stacking_data)
         np.save(os.path.join(tmp_model_dir, "stacking_train_label.npy"), stacking_label)
         np.save(os.path.join(tmp_model_dir, "stacking_test_data.npy"), stacking_test_data)

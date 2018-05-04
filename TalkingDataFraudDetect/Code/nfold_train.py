@@ -72,8 +72,8 @@ def nfold_train(train_data, train_label, model_types = None,
                 #     model.train(train_part, train_part_label, valide_part, valide_part_label)
                 # else:
                 model.train(train_part, train_part_label, valide_part, valide_part_label)
-                if stacking:
-                    model = Model(inputs = model.model.inputs, outputs = model.model.get_layer(name = 'RCNN_CONC').output)
+                # if stacking:
+                #     model = Model(inputs = model.model.inputs, outputs = model.model.get_layer(name = 'merge_sparse_emb').output)
                 onefold_models.append((model, 'k'))
             elif model_type == 'x':
                 pass
@@ -81,30 +81,30 @@ def nfold_train(train_data, train_label, model_types = None,
                 # onefold_models.append((model, 'x'))
             elif model_type == 'l':
                 model = lgbm_train(train_part, train_part_label, valide_part, valide_part_label, num_fold,
-                        fold)
+                        fold, flags = flags)
                 onefold_models.append((model, 'l'))
-        if stacking:
-            valide_pred = [model_eval(model[0], model[1], valide_part) for model in onefold_models]
-            valide_pred = reduce((lambda x, y: np.c_[x, y]), valide_pred)
-            test_pred = [model_eval(model[0], model[1], test_data) for model in onefold_models]
-            test_pred = reduce((lambda x, y: np.c_[x, y]), test_pred)
-            if stacking_data is None:
-                stacking_data = valide_pred #np.c_[valide_part, valide_pred]
-                stacking_label = valide_part_label
-                test_preds = test_pred
-            else:
-                stacking_data = np.append(stacking_data, valide_pred, axis = 0) #np.append(stacking_data, np.c_[valide_part, valide_pred], axis = 0)
-                stacking_label = np.append(stacking_label, valide_part_label, axis = 0)
-                test_preds += test_pred
-            print('stacking_data shape: {0}'.format(stacking_data.shape))
-            print('stacking_label shape: {0}'.format(stacking_label.shape))
-            print('stacking test data shape: {0}'.format(test_preds.shape))
+        # if stacking:
+        #     valide_pred = [model_eval(model[0], model[1], valide_part) for model in onefold_models]
+        #     valide_pred = reduce((lambda x, y: np.c_[x, y]), valide_pred)
+        #     test_pred = [model_eval(model[0], model[1], test_data) for model in onefold_models]
+        #     test_pred = reduce((lambda x, y: np.c_[x, y]), test_pred)
+        #     if stacking_data is None:
+        #         stacking_data = valide_pred #np.c_[valide_part, valide_pred]
+        #         stacking_label = valide_part_label
+        #         test_preds = test_pred
+        #     else:
+        #         stacking_data = np.append(stacking_data, valide_pred, axis = 0) #np.append(stacking_data, np.c_[valide_part, valide_pred], axis = 0)
+        #         stacking_label = np.append(stacking_label, valide_part_label, axis = 0)
+        #         test_preds += test_pred
+        #     print('stacking_data shape: {0}'.format(stacking_data.shape))
+        #     print('stacking_label shape: {0}'.format(stacking_label.shape))
+        #     print('stacking test data shape: {0}'.format(test_preds.shape))
         models.append(onefold_models[0])
         num_fold += 1
         if num_fold == flags.ensemble_nfold:
             break
-    if stacking:
-        test_preds /= flags.ensemble_nfold
+    # if stacking:
+    #     test_preds /= flags.ensemble_nfold
         # test_data = np.c_[test_data, test_preds]
     return models, stacking_data, stacking_label, test_preds
 

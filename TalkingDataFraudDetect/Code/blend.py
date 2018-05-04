@@ -10,6 +10,7 @@ from keras_train import DNN_Model
 
 def load_val():
     valide_df = load_valide_data()
+    valide_id = valide_df['id'].values
     valide_data = valide_df[keras_train.USED_FEATURE_LIST].values.astype(DENSE_FEATURE_TYPE)
     valide_label = valide_df['is_attributed'].values.astype(np.uint8)
     del valide_df
@@ -18,7 +19,7 @@ def load_val():
     neg_cnt = len(valide_label) - pos_cnt
     print ("valide type: {0} valide size: {1} valide data pos: {2} neg: {3}".format(
             valide_data.dtype, len(valide_data), pos_cnt, neg_cnt))
-    return valide_data, valide_label
+    return valide_data, valide_label, valide_id
 
 def load_test():
     test_df = load_test_data()
@@ -38,17 +39,17 @@ def lgb_pred(valide_data, valide_label):
     return lgb_pred
 
 def keras_pred(valide_data, valide_label):
-    model = load_model(FLAGS.input_previous_model_path + '/model_098613_09793.h5')
+    model = load_model(FLAGS.input_previous_model_path + '/model_0986303.h5')
     # print (model.summary())
     y_pred = model.predict(DNN_Model.DNN_DataSet(None, valide_data), verbose=0, batch_size=10240)
-    score = metrics.roc_auc_score(valide_label, y_pred)
-    print ("Keras AUC: {0}".format(score))
+    # score = metrics.roc_auc_score(valide_label, y_pred)
+    # print ("Keras AUC: {0}".format(score))
     return y_pred
 
-def blend(valide_label, sub1, sub2):
+def blend(sub1, sub2):
     data_dir = "../Data/"
-    sub1 = pd.read_csv(data_dir + 'sub_2018_05_01_12_12_34.csv')
-    sub2 = pd.read_csv(data_dir + 'sub_2018_04_29_15_21_32.csv')
+    sub1 = pd.read_csv(data_dir + 'sub_2018_05_03_07_06_44.csv')
+    sub2 = pd.read_csv(data_dir + 'sub_2018_05_04_03_43_49.csv')
     target = 'is_attributed'
     #blend 1
     blend = pd.merge(sub1, sub2, how='left', on='click_id')
@@ -76,17 +77,45 @@ def blend_tune(valide_label, sub1, sub2):
 
 if __name__ == "__main__":
     if FLAGS.blend_tune:
-        # valide_data, valide_label = load_val()
+        # valide_data, valide_label, valide_id = load_val()
         # k_pred = keras_pred(valide_data, valide_label)
-        # l_pred = lgb_pred(valide_data, valide_label)
+        # df = pd.DataFrame()
+        # df['id'] = valide_id
+        # df['label'] = valide_label
+        # df['re'] = k_pred
+        df = pd.read_pickle(path + 'valide_label_re.pickle')
+
+        # pre_k_pred = np.load('../Data/TrainValNuniqueVarCumNextClickReversecum/k_pred.npy')
+        # pre_l_pred = np.load('../Data/TrainValNuniqueVarCumNextClickReversecum/l_pred.npy')
+        # pre_label = np.load('../Data/TrainValNuniqueVarCumNextClickReversecum/valide_label.npy')
+        # pre_valide_id = np.load('../Data/TrainValNuniqueVarCumNextClickReversecum/valide_id.npy')
+        # pre_df = pd.DataFrame()
+        # pre_df['id'] = pre_valide_id
+        # pre_df['label'] = pre_label
+        # pre_df['re'] = np.sqrt(pre_k_pred.reshape((len(pre_label), -1)) * pre_l_pred.reshape((len(pre_label), -1)))
+        # print (pre_df.head)
+        # pre_df.to_pickle('../Data/TrainValNuniqueVarCumNextClickReversecum/valide_label_re.pickle')
+        # pre_df = pd.read_pickle('../Data/TrainValNuniqueVarCumNextClickReversecum/valide_label_re.pickle')
+        # df = pd.merge(df, pre_df, how = 'left', on = 'id')
+        # print (df.info())
+        # score = metrics.roc_auc_score(df['label_x'].values, df['re_y'].values)
+        # print ("pre Blend AUC: {0}".format(score))
+        # score = metrics.roc_auc_score(df['label_x'].values, np.sqrt(df['re_x'].values * df['re_y'].values))
+        # print ("Blend AUC: {0}".format(score))
+        # # l_pred = lgb_pred(valide_data, valide_label)
+        # np.save(path + '/valide_id.npy', valide_id)
         # np.save('k_pred.npy', k_pred)
         # np.save('l_pred.npy', l_pred)
         # np.save('valide_label.npy', valide_label)
-        valide_label = np.load('valide_label.npy')
-        k_pred = np.load('k_pred.npy')
-        l_pred =  np.load('l_pred.npy')
-        blend_tune(valide_label, k_pred, l_pred)
+        # valide_label = np.load('valide_label.npy')
+        # k_pred = np.load('k_pred.npy')
+        # l_pred =  np.load('l_pred.npy')
+        # blend_tune(valide_label, k_pred, l_pred)
     else:
-        test_data, test_id = load_test()
-        k_pred = keras_pred(test_data, valide_label)
-        l_pred = lgb_pred(valide_data, valide_label)
+        # test_data, test_id = load_test()
+        # k_pred = keras_pred(test_data, test_id)
+        # sub = pd.DataFrame()
+        # sub['click_id'] = test_id
+        # sub['is_attributed'] = k_pred
+        blend(None, None)
+        # l_pred = lgb_pred(valide_data, valide_label)

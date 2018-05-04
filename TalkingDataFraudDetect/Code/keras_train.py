@@ -20,7 +20,7 @@ from tensorflow.python.keras import backend
 from tensorflow.python.keras.layers import Dense, Input, Lambda, LSTM, TimeDistributed, SimpleRNN, \
         GRU, Bidirectional, GlobalAveragePooling1D, GlobalMaxPooling1D, Activation, \
         SpatialDropout1D, Conv2D, Conv1D, Reshape, Flatten, AveragePooling2D, MaxPooling2D, Dropout, \
-        MaxPooling1D, AveragePooling1D, Embedding, Concatenate, BatchNormalization
+        MaxPooling1D, AveragePooling1D, Embedding, Concatenate, BatchNormalization, Multiply, Add
 # from tensorflow.python.keras.layers import concatenate
 from tensorflow.python.keras.models import Model
 from tensorflow.python.keras.callbacks import EarlyStopping, Callback
@@ -51,13 +51,20 @@ SPARSE_FEATURES = {"app": {"max": 768, "emb": 5},
 SPARSE_FEATURE_LIST = list(SPARSE_FEATURES.keys())
 print ("SPARSE_FEATURE_LIST: {0}".format(SPARSE_FEATURE_LIST))
 
-CATEGORY_FEATURES = ['ip', 'app','device','os','channel','day','hour','minute','second']
+CATEGORY_FEATURES = ['app','device','os','channel','day','hour','minute','second']
 DENSE_FEATURE_LIST = [
-'ipdayhourCount','ipappCount','ipapposCount','iphourCount','ipdeviceosCumCount','ipappCumCount','ipCumCount',
-'ipdeviceosdayCumCount','ipappdayCumCount','ipdayCumCount','ipappdeviceoschannelNextClick','iposdeviceNextClick',
-'iposdeviceappNextClick','ipappdeviceoschannelReverCum','iposdeviceappReverCum','ipappos_hourVar','ipappchannel_dayVar',
-'ipappchannel_hourVar','ip_channelNunique','ipday_hourNunique','ip_appNunique','ipapp_osNunique','ip_deviceNunique',
-'ipdeviceos_appNunique'
+'ipdayhourCount','ipappCount','ipapposCount','iphourCount','iposdeviceappCount','ipdeviceosCumCount','ipappCumCount',
+'ipCumCount','ipdeviceosdayCumCount','ipappdayCumCount','ipdayCumCount','iposdeviceappCumCount',
+'ipappdeviceoschannelNextClick','iposdeviceNextClick','iposdeviceappNextClick','ipappNextClick','ipapposNextClick',
+'ipappdeviceNextClick','ipappdeviceoschannelPrevClick','iposdevicePrevClick','iposdeviceappPrevClick','ipappPrevClick',
+'ipapposPrevClick','ipappdevicePrevClick','ipappdeviceoschannelReverCum','iposdeviceappReverCum','ipappReverCum',
+'ipapposReverCum','ipappdeviceReverCum','ipappos_hourStd','ipappchannel_dayStd','ipappchannel_hourStd','ip_channelNunique',
+'ipday_hourNunique','ip_appNunique','ipapp_osNunique','ip_deviceNunique','ipdeviceos_appNunique'
+# 'ipdayhourCount','ipappCount','ipapposCount','iphourCount','ipdeviceosCumCount','ipappCumCount','ipCumCount',
+# 'ipdeviceosdayCumCount','ipappdayCumCount','ipdayCumCount','ipappdeviceoschannelNextClick','iposdeviceNextClick',
+# 'iposdeviceappNextClick','ipappdeviceoschannelReverCum','iposdeviceappReverCum','ipappos_hourVar','ipappchannel_dayVar',
+# 'ipappchannel_hourVar','ip_channelNunique','ipday_hourNunique','ip_appNunique','ipapp_osNunique','ip_deviceNunique',
+# 'ipdeviceos_appNunique'
 # 'ipdayhourCount','ipappCount','ipapposCount','iphourCount','ipdeviceosCumCount','ipappCumCount','ipCumCount',
 # 'ipdeviceosdayCumCount','ipappdayCumCount','ipdayCumCount','ipappdeviceoschannelNextClick','iposdeviceNextClick',
 # 'iposdeviceappNextClick','ipappNextClick','ipapposNextClick','ipappdeviceNextClick','ipappdeviceoschannelReverCum',
@@ -67,7 +74,7 @@ DENSE_FEATURE_LIST = [
     ]
 DENSE_FEATURE_TYPE = 'uint16'
 print ("DENSE_FEATURE_LIST: {0} {1}".format(len(DENSE_FEATURE_LIST), DENSE_FEATURE_LIST))
-DATA_HEADER = CATEGORY_FEATURES + DENSE_FEATURE_LIST
+DATA_HEADER = ['ip', ] + CATEGORY_FEATURES + DENSE_FEATURE_LIST
 USED_FEATURE_LIST = CATEGORY_FEATURES + DENSE_FEATURE_LIST
 
 class RocAucEvaluation(Callback):
@@ -201,13 +208,25 @@ class DNN_Model:
             sparse_embedding = Reshape((emb_dim,))(sparse_embedding)
             sparse_emb_list.append(sparse_embedding)
             merge_input_len += emb_dim
-        
+        merge_sparse_emb = Concatenate(name = 'merge_sparse_emb')(sparse_emb_list)
+
+        len_sparse_emb = len(sparse_emb_list)
+        inner_prod_list = []
+        for i in range(len_sparse_emb):
+            for j in range(i, len_sparse_emb):
+                inner_prd = Multiply()([sparse_emb_list[i], sparse_emb_list[j]])
+                inner_prod_list.append(inner_prd)
+        merge_inner_prod = Concatenate(name = 'merge_inner_prod')(inner_prod_list)
+        merge_wide_part = Concatenate(name = 'merge_wide_part')([merge_sparse_emb, merge_inner_prod])
+        wide_pre_sigmoid = Dense(1)(merge_wide_part)
+
         dense_input = Input(shape=(len(DENSE_FEATURE_LIST),))
         norm_dense_input = BatchNormalization()(dense_input)
-
-        merge_input = Concatenate()(sparse_emb_list + [norm_dense_input])
+        merge_input = Concatenate()([merge_wide_part, norm_dense_input])
         dense_output = self.full_connect_layer(merge_input)
-        proba = Dense(1, activation = 'sigmoid')(dense_output)
+        deep_pre_sigmoid = Dense(1)(dense_output)
+
+        proba = Activation('sigmoid')(Add()([wide_pre_sigmoid, deep_pre_sigmoid]))
 
         model = Model(sparse_input_list + [dense_input], proba) 
         model.compile(optimizer='adam', loss='binary_crossentropy', metrics = ['accuracy'])

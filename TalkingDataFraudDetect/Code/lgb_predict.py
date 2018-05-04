@@ -25,6 +25,8 @@ def find_best_iteration_search(bst):
     valide_label = valide_df['is_attributed'].values.astype(np.uint8)
     del valide_df
     gc.collect()
+    if FLAGS.stacking:
+        valide_data = gen_stacking_data(valide_data)
     pos_cnt = valide_label.sum()
     neg_cnt = len(valide_label) - pos_cnt
     print ("valide type: {0} valide size: {1} valide data pos: {2} neg: {3}".format(
@@ -45,6 +47,8 @@ def predict_test(bst):
     print ("test type {0}".format(test_data.dtype))
     del test_df
     gc.collect()
+    if FLAGS.stacking:
+        test_data = gen_stacking_data(test_data)
     with timer("predicting test data"):
         print('predicting test data...')
         sub_re = pd.DataFrame(test_id, columns = ['click_id'])

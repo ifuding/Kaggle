@@ -4,13 +4,16 @@ import keras_train
 import numpy as np
 import config
 
-CATEGORY_FEATURES = keras_train.CATEGORY_FEATURES
-FEATURE_LIST = keras_train.USED_FEATURE_LIST
+
 def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fold_seed,
-        fold = 5, train_weight = None, valide_weight = None):
+        fold = 5, train_weight = None, valide_weight = None, flags = None):
     """
     LGBM Training
     """
+    CATEGORY_FEATURES = keras_train.CATEGORY_FEATURES
+    FEATURE_LIST = keras_train.USED_FEATURE_LIST
+    if flags.stacking:
+        FEATURE_LIST += ['emb_' + str(i) for i in range(len(CATEGORY_FEATURES) * 5)] + ['k_pred']
     print("-----LGBM training-----")
 
     d_train = lgb.Dataset(train_part, train_part_label, weight = train_weight, 
