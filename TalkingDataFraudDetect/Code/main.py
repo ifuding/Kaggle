@@ -86,7 +86,7 @@ def load_train_data():
             usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
                 else:
                     train_df = pd.read_csv(train_data_path, dtype=dtypes, header = None, sep = '\t', 
-            names=['id', 'is_attributed'] + keras_train.DATA_HEADER, #nrows = 10000000, #skiprows=range(0,10000000),
+            names=['is_attributed'] + keras_train.DATA_HEADER, #nrows = 10000000, #skiprows=range(0,10000000),
             usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
         print(train_df.info())
     return train_df

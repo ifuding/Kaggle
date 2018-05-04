@@ -51,20 +51,20 @@ SPARSE_FEATURES = {"app": {"max": 768, "emb": 5},
 SPARSE_FEATURE_LIST = list(SPARSE_FEATURES.keys())
 print ("SPARSE_FEATURE_LIST: {0}".format(SPARSE_FEATURE_LIST))
 
-CATEGORY_FEATURES = ['app','device','os','channel','day','hour','minute','second']
+CATEGORY_FEATURES = ['ip', 'app','device','os','channel','day','hour','minute','second']
 DENSE_FEATURE_LIST = [
-'ipdayhourCount','ipappCount','ipapposCount','iphourCount','iposdeviceappCount','ipdeviceosCumCount','ipappCumCount',
-'ipCumCount','ipdeviceosdayCumCount','ipappdayCumCount','ipdayCumCount','iposdeviceappCumCount',
-'ipappdeviceoschannelNextClick','iposdeviceNextClick','iposdeviceappNextClick','ipappNextClick','ipapposNextClick',
-'ipappdeviceNextClick','ipappdeviceoschannelPrevClick','iposdevicePrevClick','iposdeviceappPrevClick','ipappPrevClick',
-'ipapposPrevClick','ipappdevicePrevClick','ipappdeviceoschannelReverCum','iposdeviceappReverCum','ipappReverCum',
-'ipapposReverCum','ipappdeviceReverCum','ipappos_hourStd','ipappchannel_dayStd','ipappchannel_hourStd','ip_channelNunique',
-'ipday_hourNunique','ip_appNunique','ipapp_osNunique','ip_deviceNunique','ipdeviceos_appNunique'
-# 'ipdayhourCount','ipappCount','ipapposCount','iphourCount','ipdeviceosCumCount','ipappCumCount','ipCumCount',
-# 'ipdeviceosdayCumCount','ipappdayCumCount','ipdayCumCount','ipappdeviceoschannelNextClick','iposdeviceNextClick',
-# 'iposdeviceappNextClick','ipappdeviceoschannelReverCum','iposdeviceappReverCum','ipappos_hourVar','ipappchannel_dayVar',
-# 'ipappchannel_hourVar','ip_channelNunique','ipday_hourNunique','ip_appNunique','ipapp_osNunique','ip_deviceNunique',
-# 'ipdeviceos_appNunique'
+# 'ipdayhourCount','ipappCount','ipapposCount','iphourCount','iposdeviceappCount','ipdeviceosCumCount','ipappCumCount',
+# 'ipCumCount','ipdeviceosdayCumCount','ipappdayCumCount','ipdayCumCount','iposdeviceappCumCount',
+# 'ipappdeviceoschannelNextClick','iposdeviceNextClick','iposdeviceappNextClick','ipappNextClick','ipapposNextClick',
+# 'ipappdeviceNextClick','ipappdeviceoschannelPrevClick','iposdevicePrevClick','iposdeviceappPrevClick','ipappPrevClick',
+# 'ipapposPrevClick','ipappdevicePrevClick','ipappdeviceoschannelReverCum','iposdeviceappReverCum','ipappReverCum',
+# 'ipapposReverCum','ipappdeviceReverCum','ipappos_hourStd','ipappchannel_dayStd','ipappchannel_hourStd','ip_channelNunique',
+# 'ipday_hourNunique','ip_appNunique','ipapp_osNunique','ip_deviceNunique','ipdeviceos_appNunique'
+'ipdayhourCount','ipappCount','ipapposCount','iphourCount','ipdeviceosCumCount','ipappCumCount','ipCumCount',
+'ipdeviceosdayCumCount','ipappdayCumCount','ipdayCumCount','ipappdeviceoschannelNextClick','iposdeviceNextClick',
+'iposdeviceappNextClick','ipappdeviceoschannelReverCum','iposdeviceappReverCum','ipappos_hourVar','ipappchannel_dayVar',
+'ipappchannel_hourVar','ip_channelNunique','ipday_hourNunique','ip_appNunique','ipapp_osNunique','ip_deviceNunique',
+'ipdeviceos_appNunique'
 # 'ipdayhourCount','ipappCount','ipapposCount','iphourCount','ipdeviceosCumCount','ipappCumCount','ipCumCount',
 # 'ipdeviceosdayCumCount','ipappdayCumCount','ipdayCumCount','ipappdeviceoschannelNextClick','iposdeviceNextClick',
 # 'iposdeviceappNextClick','ipappNextClick','ipapposNextClick','ipappdeviceNextClick','ipappdeviceoschannelReverCum',
@@ -74,8 +74,18 @@ DENSE_FEATURE_LIST = [
     ]
 DENSE_FEATURE_TYPE = 'uint16'
 print ("DENSE_FEATURE_LIST: {0} {1}".format(len(DENSE_FEATURE_LIST), DENSE_FEATURE_LIST))
-DATA_HEADER = ['ip', ] + CATEGORY_FEATURES + DENSE_FEATURE_LIST
-USED_FEATURE_LIST = CATEGORY_FEATURES + DENSE_FEATURE_LIST
+DATA_HEADER = CATEGORY_FEATURES + DENSE_FEATURE_LIST
+
+USED_CATEGORY_FEATURES = ['ip', 'app','device','os','channel','day','hour','minute','second']
+USED_DENSE_FEATURE_LIST = [
+# 'ipdayhourCount','ipappCount','ipapposCount','iphourCount','ipdeviceosCumCount','ipappCumCount','ipCumCount',
+# 'ipappdayCumCount','ipdayCumCount','ipappdeviceoschannelNextClick','iposdeviceNextClick',
+# 'iposdeviceappNextClick','ipappdeviceoschannelReverCum','iposdeviceappReverCum','ipappchannel_dayVar',
+# 'ipappchannel_hourVar','ip_channelNunique','ipday_hourNunique','ip_appNunique','ipapp_osNunique','ip_deviceNunique','ipdeviceos_appNunique',
+# 'ipappos_hourVar', 
+# 'ipdeviceosdayCumCount',
+]
+USED_FEATURE_LIST = USED_CATEGORY_FEATURES + USED_DENSE_FEATURE_LIST
 
 class RocAucEvaluation(Callback):
     def __init__(self, validation_data=(), interval=1, batch_interval = 1000000, verbose = 2, \
@@ -142,7 +152,7 @@ class DNN_Model:
         input shape: batch * n_feature
         output shape: batch * [sparse0, spare1, ..., sparsen, dense_features]
         """
-        return list(data[:, :len(CATEGORY_FEATURES)].transpose()) + [data[:, len(CATEGORY_FEATURES):]]
+        return list(data[:, :len(USED_CATEGORY_FEATURES)].transpose()) #+ [data[:, len(USED_CATEGORY_FEATURES):]]
 
 
     def train(self, train_part, train_part_label, valide_part, valide_part_label):
@@ -198,7 +208,7 @@ class DNN_Model:
         sparse_input_list = []
         merge_input_len = 0
         i = 0
-        for sparse_feature in CATEGORY_FEATURES:
+        for sparse_feature in USED_CATEGORY_FEATURES:
             sparse_input = Input(shape=(1,))
             sparse_input_list.append(sparse_input)
             max_id = SPARSE_FEATURES[sparse_feature]["max"]
@@ -220,15 +230,15 @@ class DNN_Model:
         merge_wide_part = Concatenate(name = 'merge_wide_part')([merge_sparse_emb, merge_inner_prod])
         wide_pre_sigmoid = Dense(1)(merge_wide_part)
 
-        dense_input = Input(shape=(len(DENSE_FEATURE_LIST),))
-        norm_dense_input = BatchNormalization()(dense_input)
-        merge_input = Concatenate()([merge_wide_part, norm_dense_input])
-        dense_output = self.full_connect_layer(merge_input)
-        deep_pre_sigmoid = Dense(1)(dense_output)
+        # dense_input = Input(shape=(len(USED_DENSE_FEATURE_LIST),))
+        # norm_dense_input = BatchNormalization()(dense_input)
+        # merge_input = Concatenate()([merge_wide_part, norm_dense_input])
+        # dense_output = self.full_connect_layer(merge_input)
+        # deep_pre_sigmoid = Dense(1)(dense_output)
 
-        proba = Activation('sigmoid')(Add()([wide_pre_sigmoid, deep_pre_sigmoid]))
+        proba = Activation('sigmoid')(wide_pre_sigmoid) #Add()([wide_pre_sigmoid, deep_pre_sigmoid]))
 
-        model = Model(sparse_input_list + [dense_input], proba) 
+        model = Model(sparse_input_list, proba) 
         model.compile(optimizer='adam', loss='binary_crossentropy', metrics = ['accuracy'])
 
         return model
