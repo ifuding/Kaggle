@@ -22,7 +22,7 @@ from tensorflow.python.keras.layers import Dense, Input, Lambda, LSTM, TimeDistr
         SpatialDropout1D, Conv2D, Conv1D, Reshape, Flatten, AveragePooling2D, MaxPooling2D, Dropout, \
         MaxPooling1D, AveragePooling1D, Embedding, Concatenate, BatchNormalization, Multiply, Add
 # from tensorflow.python.keras.layers import concatenate
-from tensorflow.python.keras.models import Model
+from tensorflow.python.keras.models import Model, load_model
 from tensorflow.python.keras.callbacks import EarlyStopping, Callback
 from tensorflow.python.keras.regularizers import l1, l2
 from tensorflow.python.keras.optimizers import SGD, RMSprop, Adam, Nadam
@@ -143,7 +143,7 @@ class DNN_Model:
     def full_connect_layer(self, input):
         full_connect = input
         for hn in self.hidden_dim:
-            full_connect = Dense(hn, activation = 'relu')(full_connect)
+            full_connect = Dense(hn, activation = 'relu', name = 'hn' + str(hn))(full_connect)
             if self.full_connect_dropout > 0:
                 full_connect = Dropout(self.full_connect_dropout)(full_connect)
         return full_connect
@@ -216,38 +216,53 @@ class DNN_Model:
         merge_input_len = 0
         i = 0
         for sparse_feature in USED_CATEGORY_FEATURES:
-            sparse_input = Input(shape=(1,))
+            sparse_input = Input(shape=(1,), name = sparse_feature)
             sparse_input_list.append(sparse_input)
             max_id = SPARSE_FEATURES[sparse_feature]["max"]
             emb_dim = self.emb_dim[i] #SPARSE_FEATURES[sparse_feature]["emb"]
             i += 1
-            sparse_embedding = Embedding(max_id + 1, emb_dim, input_length = 1, trainable = False)(sparse_input)
+            sparse_embedding = Embedding(max_id + 1, 10, input_length = 1, trainable = False)(sparse_input)
+            sparse_embedding = Reshape((10,))(sparse_embedding)
+            sparse_emb_list.append(sparse_embedding)
+            merge_input_len += emb_dim
+
+        for i in range(len(USED_CATEGORY_FEATURES)):
+            sparse_feature = USED_CATEGORY_FEATURES[i]
+            if sparse_feature == 'ip':
+                continue
+            sparse_input = sparse_input_list[i]
+            max_id = SPARSE_FEATURES[sparse_feature]["max"]
+            emb_dim = self.emb_dim[i] #SPARSE_FEATURES[sparse_feature]["emb"]
+            i += 1
+            sparse_embedding = Embedding(max_id + 1, emb_dim, input_length = 1)(sparse_input)
             sparse_embedding = Reshape((emb_dim,))(sparse_embedding)
             sparse_emb_list.append(sparse_embedding)
             merge_input_len += emb_dim
         merge_sparse_emb = Concatenate(name = 'merge_sparse_emb')(sparse_emb_list)
 
-        len_sparse_emb = len(sparse_emb_list)
-        inner_prod_list = []
-        for i in range(len_sparse_emb):
-            for j in range(i, len_sparse_emb):
-                inner_prd = Multiply()([sparse_emb_list[i], sparse_emb_list[j]])
-                inner_prod_list.append(inner_prd)
-        merge_inner_prod = Concatenate(name = 'merge_inner_prod')(inner_prod_list)
-        merge_wide_part = Concatenate(name = 'merge_wide_part')([merge_sparse_emb, merge_inner_prod])
-        wide_pre_sigmoid = Dense(1)(merge_wide_part)
+        # len_sparse_emb = len(sparse_emb_list)
+        # inner_prod_list = []
+        # for i in range(len_sparse_emb):
+        #     for j in range(i, len_sparse_emb):
+        #         inner_prd = Multiply()([sparse_emb_list[i], sparse_emb_list[j]])
+        #         inner_prod_list.append(inner_prd)
+        # merge_inner_prod = Concatenate(name = 'merge_inner_prod')(inner_prod_list)
+        # merge_wide_part = Concatenate(name = 'merge_wide_part')([merge_sparse_emb, merge_inner_prod])
+        # wide_pre_sigmoid = Dense(1)(merge_wide_part)
 
         dense_input = Input(shape=(self.dense_input_len,))
-        norm_dense_input = BatchNormalization()(dense_input)
-        merge_input = Concatenate()([merge_wide_part, norm_dense_input])
+        norm_dense_input = BatchNormalization(name = 'Dense_BN')(dense_input)
+        merge_input = Concatenate(name = 'merge_input')([merge_sparse_emb, norm_dense_input])
         dense_output = self.full_connect_layer(merge_input)
-        deep_pre_sigmoid = Dense(1)(dense_output)
+        deep_pre_sigmoid = Dense(1, name = 'deep_pre_sigmoid')(dense_output)
 
-        proba = Activation('sigmoid')(deep_pre_sigmoid) #Add()([wide_pre_sigmoid, deep_pre_sigmoid]))
+        proba = Activation('sigmoid', name = 'proba')(deep_pre_sigmoid) #Add()([wide_pre_sigmoid, deep_pre_sigmoid]))
 
         model = Model(sparse_input_list + [dense_input], proba) 
         model.compile(optimizer='adam', loss='binary_crossentropy', metrics = ['accuracy'])
 
+        # k_model = load_model('../Data/model_allSparse_09744.h5')
+        # print (k_model.summary())
         model.load_weights('../Data/model_allSparse_09744.h5', by_name=True)
 
         return model
