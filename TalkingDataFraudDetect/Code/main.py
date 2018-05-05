@@ -82,7 +82,7 @@ def load_train_data():
             else:
                 if FLAGS.stacking:
                     train_df = pd.read_csv(train_data_path, dtype=dtypes, header = None, sep = '\t', 
-            names=['id', 'is_attributed'] + keras_train.DATA_HEADER, #skiprows=range(0,10000000),
+            names=['is_attributed'] + keras_train.DATA_HEADER, #skiprows=range(0,10000000),
             usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
                 else:
                     train_df = pd.read_csv(train_data_path, dtype=dtypes, header = None, sep = '\t', 
@@ -133,11 +133,18 @@ def load_test_data():
     return test_df
 
 def gen_stacking_data(in_data):
-    k_model = load_model(FLAGS.input_previous_model_path + '/model.h5')
+    k_model = load_model(FLAGS.input_previous_model_path + '/model_allSparse_09744.h5')
+    print (k_model.summary())
+    exit(0)
     emb_model = Model(inputs = k_model.inputs, outputs = k_model.get_layer(name = 'merge_sparse_emb').output)
-    emb_vector = emb_model.predict(keras_train.DNN_Model.DNN_DataSet(None, in_data), verbose=0, batch_size=10240)
-    k_pred = k_model.predict(keras_train.DNN_Model.DNN_DataSet(None, in_data), verbose=0, batch_size=10240)
+    emb_vector = emb_model.predict(keras_train.DNN_Model.DNN_DataSet(None, in_data, sparse = True, dense = False), 
+                verbose=0, batch_size=10240)
+    k_pred = k_model.predict(keras_train.DNN_Model.DNN_DataSet(None, in_data, sparse = True, dense = False), 
+                verbose=0, batch_size=10240)
+    # k_pred = k_model.predict(in_data[:len(keras_train.USED_CATEGORY_FEATURES)], verbose=0, batch_size=10240)
     out_data = np.c_[in_data, emb_vector, k_pred]
+    print ("Shape Before stacking: {0}".format(in_data.shape))
+    print ("Shape After stacking: {0}".format(out_data.shape))
     return out_data
 
 

@@ -59,13 +59,13 @@ def nfold_train(train_data, train_label, model_types = None,
             if model_type == 'k':
                 # with tf.device('/cpu:0'):
                 if flags.load_only_singleCnt:
-                    dense_input_len = train_part.shape[1]
+                    input_len = train_part.shape[1]
                 model = DNN_Model(hidden_dim = [int(hn.strip()) for hn in flags.full_connect_hn.strip().split(',')], \
                     batch_size = flags.batch_size, epochs = flags.epochs, \
                     batch_interval = flags.batch_interval, emb_dropout = flags.emb_dropout, \
                     full_connect_dropout = flags.full_connect_dropout, scores = scores, \
                     emb_dim = [int(e.strip()) for e in flags.emb_dim.strip().split(',')], \
-                    load_only_singleCnt = flags.load_only_singleCnt, dense_input_len = None)
+                    load_only_singleCnt = flags.load_only_singleCnt, input_len = input_len)
                 if num_fold == 0:
                     print(model.model.summary())
                 # if flags.load_only_singleCnt:

@@ -72,16 +72,16 @@ DENSE_FEATURE_LIST = [
 # 'ipappchannel_hourVar','ipappos_hourStd','ipappchannel_dayStd','ipappchannel_hourStd','ip_channelNunique','ipday_hourNunique',
 # 'ip_appNunique','ipapp_osNunique','ip_deviceNunique','ipdeviceos_appNunique'
     ]
-DENSE_FEATURE_TYPE = 'uint16'
+DENSE_FEATURE_TYPE = 'uint32'
 print ("DENSE_FEATURE_LIST: {0} {1}".format(len(DENSE_FEATURE_LIST), DENSE_FEATURE_LIST))
 DATA_HEADER = CATEGORY_FEATURES + DENSE_FEATURE_LIST
 
 USED_CATEGORY_FEATURES = ['ip', 'app','device','os','channel','day','hour','minute','second']
 USED_DENSE_FEATURE_LIST = [
-# 'ipdayhourCount','ipappCount','ipapposCount','iphourCount','ipdeviceosCumCount','ipappCumCount','ipCumCount',
-# 'ipappdayCumCount','ipdayCumCount','ipappdeviceoschannelNextClick','iposdeviceNextClick',
-# 'iposdeviceappNextClick','ipappdeviceoschannelReverCum','iposdeviceappReverCum','ipappchannel_dayVar',
-# 'ipappchannel_hourVar','ip_channelNunique','ipday_hourNunique','ip_appNunique','ipapp_osNunique','ip_deviceNunique','ipdeviceos_appNunique',
+'ipdayhourCount','ipappCount','ipapposCount','iphourCount','ipdeviceosCumCount','ipappCumCount','ipCumCount',
+'ipappdayCumCount','ipdayCumCount','ipappdeviceoschannelNextClick','iposdeviceNextClick',
+'iposdeviceappNextClick','ipappdeviceoschannelReverCum','iposdeviceappReverCum','ipappchannel_dayVar',
+'ipappchannel_hourVar','ip_channelNunique','ipday_hourNunique','ip_appNunique','ipapp_osNunique','ip_deviceNunique','ipdeviceos_appNunique',
 # 'ipappos_hourVar', 
 # 'ipdeviceosdayCumCount',
 ]
@@ -117,7 +117,7 @@ class DNN_Model:
     """
     """
     def __init__(self, hidden_dim, batch_size, epochs, batch_interval, emb_dropout, \
-                full_connect_dropout, scores, emb_dim, load_only_singleCnt, dense_input_len):
+                full_connect_dropout, scores, emb_dim, load_only_singleCnt, input_len):
         self.hidden_dim = hidden_dim
         self.batch_size = batch_size
         self.epochs = epochs
@@ -126,7 +126,8 @@ class DNN_Model:
         self.full_connect_dropout = full_connect_dropout
         self.scores = scores
         self.emb_dim = emb_dim
-        self.dense_input_len = dense_input_len
+        self.input_len = input_len
+        self.dense_input_len = input_len - len(USED_CATEGORY_FEATURES)
         self.load_only_singleCnt = load_only_singleCnt
         self.model = self.create_model()
 
@@ -147,12 +148,18 @@ class DNN_Model:
                 full_connect = Dropout(self.full_connect_dropout)(full_connect)
         return full_connect
 
-    def DNN_DataSet(self, data):
+
+    def DNN_DataSet(self, data, sparse = False, dense = False):
         """
         input shape: batch * n_feature
         output shape: batch * [sparse0, spare1, ..., sparsen, dense_features]
         """
-        return list(data[:, :len(USED_CATEGORY_FEATURES)].transpose()) #+ [data[:, len(USED_CATEGORY_FEATURES):]]
+        if sparse and dense:
+            return list(data[:, :len(USED_CATEGORY_FEATURES)].transpose()) + [data[:, len(USED_CATEGORY_FEATURES):]]
+        elif sparse:
+            return list(data[:, :len(USED_CATEGORY_FEATURES)].transpose())
+        else:
+            return data[:, len(USED_CATEGORY_FEATURES):]
 
 
     def train(self, train_part, train_part_label, valide_part, valide_part_label):
@@ -161,8 +168,8 @@ class DNN_Model:
         """
         print("-----DNN training-----")
 
-        DNN_Train_Data = self.DNN_DataSet(train_part)
-        DNN_Valide_Data = self.DNN_DataSet(valide_part)
+        DNN_Train_Data = self.DNN_DataSet(train_part, sparse = True, dense = True)
+        DNN_Valide_Data = self.DNN_DataSet(valide_part, sparse = True, dense = True)
         callbacks = [
                 EarlyStopping(monitor='val_loss', patience=30, verbose=0),
                 RocAucEvaluation(validation_data=(DNN_Valide_Data, valide_part_label), interval=1, \
@@ -183,7 +190,7 @@ class DNN_Model:
         Keras Training
         """
         print("-----DNN Test-----")
-        pred = self.model.predict(self.DNN_DataSet(test_part), batch_size=1024, verbose=verbose)
+        pred = self.model.predict(self.DNN_DataSet(test_part, sparse = True, dense = True), batch_size=1024, verbose=verbose)
         return pred
 
 
@@ -214,7 +221,7 @@ class DNN_Model:
             max_id = SPARSE_FEATURES[sparse_feature]["max"]
             emb_dim = self.emb_dim[i] #SPARSE_FEATURES[sparse_feature]["emb"]
             i += 1
-            sparse_embedding = Embedding(max_id + 1, emb_dim, input_length = 1)(sparse_input)
+            sparse_embedding = Embedding(max_id + 1, emb_dim, input_length = 1, trainable = False)(sparse_input)
             sparse_embedding = Reshape((emb_dim,))(sparse_embedding)
             sparse_emb_list.append(sparse_embedding)
             merge_input_len += emb_dim
@@ -230,16 +237,18 @@ class DNN_Model:
         merge_wide_part = Concatenate(name = 'merge_wide_part')([merge_sparse_emb, merge_inner_prod])
         wide_pre_sigmoid = Dense(1)(merge_wide_part)
 
-        # dense_input = Input(shape=(len(USED_DENSE_FEATURE_LIST),))
-        # norm_dense_input = BatchNormalization()(dense_input)
-        # merge_input = Concatenate()([merge_wide_part, norm_dense_input])
-        # dense_output = self.full_connect_layer(merge_input)
-        # deep_pre_sigmoid = Dense(1)(dense_output)
+        dense_input = Input(shape=(self.dense_input_len,))
+        norm_dense_input = BatchNormalization()(dense_input)
+        merge_input = Concatenate()([merge_wide_part, norm_dense_input])
+        dense_output = self.full_connect_layer(merge_input)
+        deep_pre_sigmoid = Dense(1)(dense_output)
 
-        proba = Activation('sigmoid')(wide_pre_sigmoid) #Add()([wide_pre_sigmoid, deep_pre_sigmoid]))
+        proba = Activation('sigmoid')(deep_pre_sigmoid) #Add()([wide_pre_sigmoid, deep_pre_sigmoid]))
 
-        model = Model(sparse_input_list, proba) 
+        model = Model(sparse_input_list + [dense_input], proba) 
         model.compile(optimizer='adam', loss='binary_crossentropy', metrics = ['accuracy'])
+
+        model.load_weights('../Data/model_allSparse_09744.h5', by_name=True)
 
         return model
 

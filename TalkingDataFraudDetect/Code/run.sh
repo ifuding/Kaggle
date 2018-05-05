@@ -2,10 +2,10 @@
 set -x
 
 python3 $1.py --model_type k --full_connect_hn 128,64,32 --stacking False --nfold 5 \
-        --batch_size 512 --full_connect_dropout 0 \
-        --epochs 20 --ensemble_nfold 1 --batch_interval 20000 \
+        --batch_size 2048 --full_connect_dropout 0 \
+        --epochs 2 --ensemble_nfold 1 --batch_interval 20000 \
         --input-training-data-path ../Data/TrainValNuniqueVarCumNextClickReversecum/  \
-        --output-model-path ../Data/ --emb_dim 5,5,5,5,5,5,5,5,5 \
+        --output-model-path ../Data/ --emb_dim 10,10,10,10,10,10,10,10,10 \
         --debug False --neg_sample False --sample_C 20 --load_only_singleCnt True --log_transform False \
         --search_best_iteration True --best_iteration 1000 --search_iterations 600,1300,100 \
         --input-previous-model-path ../Data/ --split_train_val False --train_eval_len 110000000 \
