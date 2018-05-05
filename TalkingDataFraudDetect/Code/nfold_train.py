@@ -1,6 +1,6 @@
 from sklearn.model_selection import KFold
 from lgb import lgbm_train
-# import xgboost as xgb
+import xgboost as xgb
 # from functools import reduce
 import numpy as np
 from keras_train import DNN_Model
@@ -8,6 +8,7 @@ from keras_train import DNN_Model
 # from RCNN_Keras import get_word2vec, RCNN_Model
 # from RNN_Keras import RNN_Model
 from tensorflow.python.keras.models import Model
+from xgb import xgb_train
 
 # RNN_PARAMS
 RCNN_HIDDEN_UNIT = [128, 64]
@@ -76,9 +77,8 @@ def nfold_train(train_data, train_label, model_types = None,
                 #     model = Model(inputs = model.model.inputs, outputs = model.model.get_layer(name = 'merge_sparse_emb').output)
                 onefold_models.append((model, 'k'))
             elif model_type == 'x':
-                pass
-                # model = xgb_train(train_part, train_part_label, valide_part, valide_part_label, num_fold)
-                # onefold_models.append((model, 'x'))
+                model = xgb_train(train_part, train_part_label, valide_part, valide_part_label, num_fold)
+                onefold_models.append((model, 'x'))
             elif model_type == 'l':
                 model = lgbm_train(train_part, train_part_label, valide_part, valide_part_label, num_fold,
                         fold, flags = flags)

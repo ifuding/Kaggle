@@ -104,7 +104,7 @@ def load_valide_data():
             else:
                 valide_data_path = path + path_prefix + ".csv"
                 valide_df = pd.read_csv(valide_data_path, dtype=dtypes, header = None, sep = '\t',
-    names=['id', 'is_attributed'] + keras_train.DATA_HEADER, # nrows = 10000,
+    names=['id', 'is_attributed'] + keras_train.DATA_HEADER, #nrows = 10000,
     usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
             print(valide_df.info())
     return valide_df
@@ -154,6 +154,13 @@ def load_data():
     train_df = load_train_data()
     valide_df = load_valide_data()
     test_df = load_test_data()
+
+    # len_train = 20905996
+    # len_valide = 20000001
+    # df = pd.read_pickle('AvgStd_TrainValTest.pickle')
+    # train_df = df[: len_train]
+    # valide_df = df[len_train: len_train + len_valide]
+    # test_df = df[len_train + len_valide: len_train + len_valide + 100000]
     if FLAGS.load_only_singleCnt:
         train_data = train_df[keras_train.USED_FEATURE_LIST].values.astype(DENSE_FEATURE_TYPE)
         train_label = train_df['is_attributed'].values.astype(np.uint8)

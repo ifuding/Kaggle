@@ -1,7 +1,7 @@
 #! /bin/bash
 set -x
 
-python3 $1.py --model_type k --full_connect_hn 128,64,32 --stacking False --nfold 5 \
+python3 $1.py --model_type k --full_connect_hn 128,64,32,16 --stacking False --nfold 5 \
         --batch_size 2048 --full_connect_dropout 0 \
         --epochs 20 --ensemble_nfold 1 --batch_interval 20000 \
         --input-training-data-path ../Data/TrainValNuniqueVarCumNextClickReversecum/  \
