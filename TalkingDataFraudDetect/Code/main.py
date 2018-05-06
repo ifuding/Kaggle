@@ -54,7 +54,7 @@ FLAGS = flags.FLAGS
 
 path = FLAGS.input_training_data_path
 dtypes = {
-'ip' : 'uint32', 'app' : 'uint16', 'device' : 'uint16', 'os' : 'uint16', 'channel' : 'uint16', 'is_attributed' : 'uint8', 
+'ip' : 'uint32', 'app' : 'uint16', 'device' : 'uint16', 'os' : 'uint16', 'channel' : 'uint16', 'is_attributed' : 'float32', 
 'click_id' : 'uint32', 'day' : 'uint8', 'hour' : 'uint8', 'yesterday' : 'uint8', 'minute' : 'uint8', 'second' : 'uint8',
 'id' : 'uint32', 'is_attributed_test' : 'float32'
         }
@@ -83,11 +83,13 @@ def load_train_data():
                 if FLAGS.stacking:
                     train_df = pd.read_csv(train_data_path, dtype=dtypes, header = None, sep = '\t', 
             names=['is_attributed'] + keras_train.DATA_HEADER, #skiprows=range(0,10000000),
-            usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
+            usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST
+            )
                 else:
                     train_df = pd.read_csv(train_data_path, dtype=dtypes, header = None, sep = '\t', 
             names=['is_attributed'] + keras_train.DATA_HEADER, #nrows = 10000000, #skiprows=range(0,10000000),
-            usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
+            # usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST
+            )
         print(train_df.info())
     return train_df
 
@@ -105,7 +107,8 @@ def load_valide_data():
                 valide_data_path = path + path_prefix + ".csv"
                 valide_df = pd.read_csv(valide_data_path, dtype=dtypes, header = None, sep = '\t',
     names=['id', 'is_attributed'] + keras_train.DATA_HEADER, #nrows = 10000,
-    usecols = ['is_attributed'] + keras_train.USED_FEATURE_LIST)
+    # usecols = ['id', 'is_attributed'] + keras_train.USED_FEATURE_LIST
+    )
             print(valide_df.info())
     return valide_df
 
@@ -123,8 +126,9 @@ def load_test_data():
         else:
             test_data_path = path + path_prefix + ".csv"
             test_df = pd.read_csv(test_data_path, dtype=dtypes, header = None, sep = '\t', 
-        names=['id', 'click_id'] + keras_train.DATA_HEADER, nrows = 10000,
-        usecols = ['click_id'] + keras_train.USED_FEATURE_LIST)
+        names=['id', 'click_id'] + keras_train.DATA_HEADER, #nrows = 10000,
+        # usecols = ['click_id'] + keras_train.USED_FEATURE_LIST
+        )
         if FLAGS.test_for_train:
             train_df=train_df.append(test_df[['is_attributed'] + keras_train.USED_FEATURE_LIST])
             test_df = test_df[:100000]
@@ -151,60 +155,66 @@ def gen_stacking_data(in_data):
 def load_data():
     """
     """
-    train_df = load_train_data()
-    valide_df = load_valide_data()
-    test_df = load_test_data()
+    # df = train_df.append(valide_df)
+    # del train_df
+    # del valide_df
+    # df = df.append(test_df)
+    # del test_df
+    # min_df = df[keras_train.DENSE_FEATURE_LIST].min()
+    # max_df = df[keras_train.DENSE_FEATURE_LIST].max()
+    # df[keras_train.DENSE_FEATURE_LIST] = (df[keras_train.DENSE_FEATURE_LIST] - min_df) / (max_df - min_df)
+    # print (df.info())
+    # print (df[:10])
+    # df.to_pickle('MinMaxNormTrainValTest.pickle')
+    # exit(0)
+    len_train = 20905996
+    len_valide = 20000001
+    df = pd.read_pickle('TrainValTest.pickle')
+    train_df = df[: len_train]
+    valide_df = df[len_train: len_train + len_valide]
+    test_df = df[len_train + len_valide:]
+    del df
+    if FLAGS.debug:
+        train_df = train_df[:100000]
+        valide_df = valide_df[:100000]
+        test_df = test_df[:100000]
+    model = load_model(FLAGS.input_previous_model_path + '/model_098613_09793.h5')
+    test_df['is_attributed'] = model.predict(keras_train.DNN_Model.DNN_DataSet(None, test_df[keras_train.USED_FEATURE_LIST].values.astype(DENSE_FEATURE_TYPE)), 
+                verbose=0, batch_size=10240)
+    test_target_min = test_df['is_attributed'].min()
+    test_target_max = test_df['is_attributed'].max()
+    print ("test max: {0} min: {1}".format(test_target_max, test_target_min))
+    test_df['is_attributed'] = (test_df['is_attributed'] - test_target_min) / (test_target_max - test_target_min)
+    # exit(0)
+    train_df = train_df.append(test_df)
+    # test_df = test_df[:100000]
+    train_data = train_df[keras_train.USED_FEATURE_LIST].values.astype(DENSE_FEATURE_TYPE)
+    train_label = train_df['is_attributed'].values.astype('float32')
+    del train_df
+    gc.collect()
 
-    # len_train = 20905996
-    # len_valide = 20000001
-    # df = pd.read_pickle('AvgStd_TrainValTest.pickle')
-    # train_df = df[: len_train]
-    # valide_df = df[len_train: len_train + len_valide]
-    # test_df = df[len_train + len_valide: len_train + len_valide + 100000]
-    if FLAGS.load_only_singleCnt:
-        train_data = train_df[keras_train.USED_FEATURE_LIST].values.astype(DENSE_FEATURE_TYPE)
-        train_label = train_df['is_attributed'].values.astype(np.uint8)
-        del train_df
-        gc.collect()
-        if FLAGS.split_train_val:
-            train_len = len(train_label)
-            valide_data = train_data[train_len - FLAGS.eval_len:]
-            valide_label = train_label[train_len - FLAGS.eval_len:]
-            train_data = train_data[:train_len - FLAGS.eval_len]
-            train_label = train_label[:train_len - FLAGS.eval_len]
-        else:
-            valide_data = valide_df[keras_train.USED_FEATURE_LIST].values.astype(DENSE_FEATURE_TYPE)
-            valide_label = valide_df['is_attributed'].values.astype(np.uint8)
-            del valide_df
-            gc.collect()
-        test_data = test_df[keras_train.USED_FEATURE_LIST].values.astype(DENSE_FEATURE_TYPE)
-        test_id = test_df['click_id'].astype('uint32').values.astype(np.uint32)
-        del test_df
-    else:
-        # valide_len = len_train // 5
-        train_data = train_df[train_df["day"] != 9][:len_train][keras_train.SPARSE_FEATURE_LIST].values
-        train_label = train_df[train_df["day"] != 9][:len_train]['is_attributed'].values
-        valide_data = train_df[train_df["day"] == 9][:len_train][keras_train.SPARSE_FEATURE_LIST].values
-        valide_label = train_df[train_df["day"] == 9][:len_train]['is_attributed'].values
+    valide_data = valide_df[keras_train.USED_FEATURE_LIST].values.astype(DENSE_FEATURE_TYPE)
+    valide_label = valide_df['is_attributed'].values.astype('float32')
+    del valide_df
+    gc.collect()
 
-        test_data = train_df[len_train:][keras_train.SPARSE_FEATURE_LIST].values
-        test_id = train_df[len_train:]['click_id'].astype('uint32').values
-        del train_df
+    test_data = test_df[keras_train.USED_FEATURE_LIST].values.astype(DENSE_FEATURE_TYPE)
+    test_id = test_df['click_id'].astype('uint32').values.astype(np.uint32)
+    del test_df
     gc.collect()
 
     weight = None
     if FLAGS.neg_sample:
         train_data, train_label, weight = neg_sample(train_data, train_label, FLAGS.sample_C)
-    if (FLAGS.log_transform):
-        train_data = (np.log(train_data) * 10000).astype(np.uint32)
-        valide_data = (np.log(valide_data) * 10000).astype(np.uint32)
-        test_data = (np.log(test_data) * 10000).astype(np.uint32)
 
     if FLAGS.stacking:
         train_data = gen_stacking_data(train_data)
         valide_data = gen_stacking_data(valide_data)
         test_data = gen_stacking_data(test_data)
 
+    # print (train_label[:10])
+    # print (valide_label[:10])
+    # exit(0)
     pos_cnt = train_label.sum()
     neg_cnt = len(train_label) - pos_cnt
     print ("train type: {0} train size: {1} train data pos: {2} neg: {3}".format(

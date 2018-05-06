@@ -8,8 +8,13 @@ import lightgbm as lgb
 from tensorflow.python.keras.models import load_model
 from keras_train import DNN_Model
 
+# len_train = 20905996
+# len_valide = 20000001
+# df = pd.read_pickle('MinMaxNormTrainValTest.pickle')
+
 def load_val():
     valide_df = load_valide_data()
+    # valide_df = df[len_train: len_train + len_valide]
     valide_id = valide_df['id'].values
     valide_data = valide_df[keras_train.USED_FEATURE_LIST].values.astype(DENSE_FEATURE_TYPE)
     valide_label = valide_df['is_attributed'].values.astype(np.uint8)
@@ -39,11 +44,11 @@ def lgb_pred(valide_data, valide_label):
     return lgb_pred
 
 def keras_pred(valide_data, valide_label):
-    model = load_model(FLAGS.input_previous_model_path + '/model_0986303.h5')
-    # print (model.summary())
+    model = load_model(FLAGS.input_previous_model_path + '/model_098613_09793.h5')
+    print (model.summary())
     y_pred = model.predict(DNN_Model.DNN_DataSet(None, valide_data), verbose=0, batch_size=10240)
-    # score = metrics.roc_auc_score(valide_label, y_pred)
-    # print ("Keras AUC: {0}".format(score))
+    score = metrics.roc_auc_score(valide_label, y_pred)
+    print ("Keras AUC: {0}".format(score))
     return y_pred
 
 def blend(sub1, sub2):
@@ -77,13 +82,13 @@ def blend_tune(valide_label, sub1, sub2):
 
 if __name__ == "__main__":
     if FLAGS.blend_tune:
-        # valide_data, valide_label, valide_id = load_val()
-        # k_pred = keras_pred(valide_data, valide_label)
+        valide_data, valide_label, valide_id = load_val()
+        k_pred = keras_pred(valide_data, valide_label)
         # df = pd.DataFrame()
         # df['id'] = valide_id
         # df['label'] = valide_label
         # df['re'] = k_pred
-        df = pd.read_pickle(path + 'valide_label_re.pickle')
+        # df = pd.read_pickle(path + 'valide_label_re.pickle')
 
         # pre_k_pred = np.load('../Data/TrainValNuniqueVarCumNextClickReversecum/k_pred.npy')
         # pre_l_pred = np.load('../Data/TrainValNuniqueVarCumNextClickReversecum/l_pred.npy')

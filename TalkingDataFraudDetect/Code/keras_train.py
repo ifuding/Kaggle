@@ -79,11 +79,10 @@ DATA_HEADER = CATEGORY_FEATURES + DENSE_FEATURE_LIST
 USED_CATEGORY_FEATURES = ['app','device','os','channel','day','hour','minute','second']
 USED_DENSE_FEATURE_LIST = [
 'ipdayhourCount','ipappCount','ipapposCount','iphourCount','ipdeviceosCumCount','ipappCumCount','ipCumCount',
-'ipappdayCumCount','ipdayCumCount','ipappdeviceoschannelNextClick','iposdeviceNextClick',
-'iposdeviceappNextClick','ipappdeviceoschannelReverCum','iposdeviceappReverCum','ipappchannel_dayVar',
-'ipappchannel_hourVar','ip_channelNunique','ipday_hourNunique','ip_appNunique','ipapp_osNunique','ip_deviceNunique','ipdeviceos_appNunique',
-# 'ipappos_hourVar', 
-# 'ipdeviceosdayCumCount',
+'ipdeviceosdayCumCount','ipappdayCumCount','ipdayCumCount','ipappdeviceoschannelNextClick','iposdeviceNextClick',
+'iposdeviceappNextClick','ipappdeviceoschannelReverCum','iposdeviceappReverCum','ipappos_hourVar','ipappchannel_dayVar',
+'ipappchannel_hourVar','ip_channelNunique','ipday_hourNunique','ip_appNunique','ipapp_osNunique','ip_deviceNunique',
+'ipdeviceos_appNunique'
 ]
 USED_FEATURE_LIST = USED_CATEGORY_FEATURES + USED_DENSE_FEATURE_LIST
 
@@ -144,14 +143,14 @@ class DNN_Model:
         full_connect = input
         for hn in self.hidden_dim:
             fc_in = full_connect
-            full_connect = Dense(hn, activation = 'relu', name = 'hn' + str(hn)+ "_trainable")(full_connect)
-            full_connect = Concatenate(name = 'DenseConcat_' + str(hn))([fc_in, full_connect])
+            full_connect = Dense(hn, activation = 'relu')(full_connect)
+            # ull_connect = Concatenate()([fc_in, full_connect])
             if self.full_connect_dropout > 0:
                 full_connect = Dropout(self.full_connect_dropout)(full_connect)
         return full_connect
 
 
-    def DNN_DataSet(self, data, sparse = False, dense = False):
+    def DNN_DataSet(self, data, sparse = True, dense = True):
         """
         input shape: batch * n_feature
         output shape: batch * [sparse0, spare1, ..., sparsen, dense_features]
@@ -182,7 +181,7 @@ class DNN_Model:
                     shuffle=True, verbose=2,
                     validation_data=(DNN_Valide_Data, valide_part_label)
                     , callbacks=callbacks
-                    # , class_weight = {0: 1., 1: 50.}
+                    # , class_weight = {0: 1., 1: 5.}
                     )
         return self.model
 

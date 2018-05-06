@@ -24,7 +24,7 @@ def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fol
             'task': 'train',
             'boosting_type': 'gbdt', #'gbdt',
             'objective': 'binary',
-            'metric': {'binary_logloss'},
+            'metric': {'binary_logloss', 'auc'},
             'num_leaves': 240, #60, #40, # 60,
             'min_sum_hessian_in_leaf': 10,
             'max_depth': 50,#12, #6, # 10,
