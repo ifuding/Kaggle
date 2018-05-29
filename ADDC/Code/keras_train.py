@@ -35,12 +35,13 @@ CATEGORY_FEATURES = [
 "item_seq_number"
 ]
 
-DENSE_FEATURE_LIST = [
+DENSE_FEATURES = [
 "price"
     ]
 USED_CATEGORY_FEATURES = CATEGORY_FEATURES
-USED_DENSE_FEATURE_LIST = DENSE_FEATURE_LIST
-USED_FEATURE_LIST = USED_CATEGORY_FEATURES + USED_DENSE_FEATURE_LIST
+USED_DENSE_FEATURES = DENSE_FEATURES
+USED_SEQUENCE_FEATRURES = ["description", "title"]
+USED_FEATURE_LIST = USED_CATEGORY_FEATURES + USED_DENSE_FEATURE_LIST + USED_SEQUENCE_FEATRURES
 
 class RocAucEvaluation(Callback):
     def __init__(self, validation_data=(), interval=1, batch_interval = 1000000, verbose = 2, \
@@ -81,10 +82,14 @@ class DNN_Model:
         self.emb_dim = [int(e.strip()) for e in flags.emb_dim.strip().split(',')]
         self.dense_input_len = len(DENSE_FEATURE_LIST)
         self.load_only_singleCnt = flags.load_only_singleCnt
-        self.max_token = flag.max_token
-        self.embedding_dim = flag.gram_embedding_dim
-        self.fix_wv_model = flag.fix_wv_model
+        self.max_token = flags.max_token
+        self.embedding_dim = flags.gram_embedding_dim
+        self.fix_wv_model = flags.fix_wv_model
         self.filter_size = [int(hn.strip()) for hn in flags.filter_size.strip().split(',')]
+        self.kernel_size_list = [int(kernel.strip()) for kernel in flags.kernel_size_list.strip().split(',')]
+        self.rnn_units = [int(hn.strip()) for hn in flags.rnn_units.strip().split(',')]
+        self.rnn_input_dropout = 0
+        self.rnn_state_dropout = 0
 
         self.scores = scores
         self.cat_max = cat_max
@@ -117,7 +122,8 @@ class DNN_Model:
         output shape: batch * [sparse0, spare1, ..., sparsen, dense_features]
         """
         if sparse and dense:
-            return list(data[USED_CATEGORY_FEATURES].values.transpose()) + [data[USED_DENSE_FEATURE_LIST].values]
+            return list(data[USED_CATEGORY_FEATURES].values.transpose()) + [data[USED_DENSE_FEATURES].values] + \
+                [data[USED_DENSE_FEATURES].values]
         elif sparse:
             return list(data[:, :len(USED_CATEGORY_FEATURES)].values.transpose())
         else:
@@ -160,7 +166,7 @@ class DNN_Model:
             max_pool = Lambda(self._top_k)(input)
         else:
             max_pool = GlobalMaxPooling1D()(input)
-        conc = concatenate([avg_pool, max_pool])
+        conc = Concatenate()([avg_pool, max_pool])
         return conc
     
 
@@ -170,7 +176,7 @@ class DNN_Model:
             kernel_maps = Conv1D(filters = filter_size, kernel_size = kernel_size, activation = 'relu')(x)
             kernel_conc = self.pooling_blend(kernel_maps)
             conc_list.append(kernel_conc)
-        return concatenate(conc_list, axis = 1)
+        return Concatenate()(conc_list)
 
 
     def Create_CNN(self, inp):
@@ -190,7 +196,7 @@ class DNN_Model:
             if filter_size > 0:
                 conc = self.ConvBlock(x, filter_size)
                 cnn_list.append(conc)     
-        for rnn_unit in self.context_vector_dim:
+        for rnn_unit in self.rnn_units:
             if rnn_unit > 0:
                 rnn_maps = Bidirectional(GRU(rnn_unit, return_sequences=True, \
                             dropout=self.rnn_input_dropout, recurrent_dropout=self.rnn_state_dropout))(x)

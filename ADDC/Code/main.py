@@ -22,6 +22,7 @@ from tensorflow.python.keras.models import load_model,Model
 from sklearn import preprocessing
 from tensorflow.python.keras.preprocessing.text import Tokenizer, text_to_word_sequence
 from tensorflow.python.keras.preprocessing.sequence import pad_sequences
+from CNN_Keras import get_word2vec_embedding
 
 flags = tf.app.flags
 flags.DEFINE_string('input-training-data-path', "../../Data/", 'data dir override')
@@ -54,10 +55,13 @@ flags.DEFINE_string('search_iterations', "100,1500,100", 'search iterations')
 flags.DEFINE_string('input-previous-model-path', "../../Data/", 'data dir override')
 flags.DEFINE_bool("blend_tune", False, "Whether to tune the blen")
 flags.DEFINE_integer('vocab_size', 300000, 'vocab size')
-flags.DEFINE_integer('max_seq_len', 100, 'max sequence length')
+flags.DEFINE_integer('max_desc_len', 100, 'max description sequence length')
+flags.DEFINE_integer('max_title_len', 100, 'max title sequence length')
 flags.DEFINE_bool("load_wv_model", True, "Whether to load word2vec model")
 flags.DEFINE_string('wv_model_type', "fast_text", 'word2vec model type')
 flags.DEFINE_string('wv_model_file', "wiki.en.vec.indata", 'word2vec model file')
+flags.DEFINE_string('gram_embedding_dim', '300', 'gram embedding dim')
+flags.DEFINE_string('kernel_size_list', "1,2,3", 'kernel size list')
 FLAGS = flags.FLAGS
 
 path = FLAGS.input_training_data_path
@@ -118,23 +122,23 @@ def load_data():
     # print(df.head)
     # exit(0)
 
-    # print('Tokenizer...')
-    # data = df[textfeats].apply(lambda x: ' '.join(x), axis=1).values
-    # tokenizer = Tokenizer(num_words = FLAGS.vocab_size)
-    # tokenizer.fit_on_texts(data)
-    # data = tokenizer.texts_to_sequences(df['description'])
-    # df['description'] = pad_sequences(data, maxlen = FLAGS.max_seq_len)
-    # data = tokenizer.texts_to_sequences(df['title'])
-    # df['title'] = pad_sequences(data, maxlen = FLAGS.max_seq_len)
-    # if FLAGS.load_wv_model:
-    #     emb_weight = get_word2vec_embedding(location = FLAGS.input_training_data_path + FLAGS.wv_model_file, \
-    #             tokenizer = tokenizer, nb_words = FLAGS.vocab_size, embed_size = FLAGS.emb_dim, \
-    #             model_type = FLAGS.wv_model_type, uniform_init_emb = FLAGS.uniform_init_emb)
-    # else:
-    #     if FLAGS.uniform_init_emb:
-    #         emb_weight = np.random.uniform(0, 1, (FLAGS.vocab_size, FLAGS.emb_dim))
-    #     else:
-    #         emb_weight = np.zeros((FLAGS.vocab_size, FLAGS.emb_dim))
+    print('Tokenizer...')
+    data = df[textfeats].apply(lambda x: ' '.join(x), axis=1).values
+    tokenizer = Tokenizer(num_words = FLAGS.vocab_size)
+    tokenizer.fit_on_texts(data)
+    data = tokenizer.texts_to_sequences(df['description'])
+    df['description'] = pad_sequences(data, maxlen = FLAGS.max_desc_len)
+    data = tokenizer.texts_to_sequences(df['title'])
+    df['title'] = pad_sequences(data, maxlen = FLAGS.max_title_len)
+    if FLAGS.load_wv_model:
+        emb_weight = get_word2vec_embedding(location = FLAGS.input_training_data_path + FLAGS.wv_model_file, \
+                tokenizer = tokenizer, nb_words = FLAGS.vocab_size, embed_size = FLAGS.emb_dim, \
+                model_type = FLAGS.wv_model_type, uniform_init_emb = FLAGS.uniform_init_emb)
+    else:
+        if FLAGS.uniform_init_emb:
+            emb_weight = np.random.uniform(0, 1, (FLAGS.vocab_size, FLAGS.emb_dim))
+        else:
+            emb_weight = np.zeros((FLAGS.vocab_size, FLAGS.emb_dim))
 
     # df.drop(textfeats, axis=1,inplace=True)
     print(df.info())
@@ -146,7 +150,7 @@ def load_data():
     valide_data = None
     valide_label = None
     weight = None
-    return train_data, train_label, test_data, test_id, valide_data, valide_label, weight, cat_max
+    return train_data, train_label, test_data, test_id, valide_data, valide_label, weight, cat_max, emb_weight
 
 
 def sub(mdoels, stacking_data = None, stacking_label = None, stacking_test_data = None, test = None, \
@@ -198,7 +202,7 @@ def sub(mdoels, stacking_data = None, stacking_label = None, stacking_test_data 
 
 if __name__ == "__main__":
     scores_text = []
-    train_data, train_label, test_data, tid, valide_data, valide_label, weight, cat_max = load_data()
+    train_data, train_label, test_data, tid, valide_data, valide_label, weight, cat_max, emb_weight = load_data()
     if not FLAGS.load_only_singleCnt and FLAGS.model_type == 'k':
         test_data = list(test_data.transpose())
     if not FLAGS.load_stacking_data:
