@@ -84,9 +84,9 @@ def get_word2vec_embedding(location = 'wv_model_norm.gensim', tokenizer = None, 
             for line in emb_file:
                 ls = line.strip().split(' ')
                 word = ls[0]
-                    # if word in word_index:
-                    #     emb_file_indata.write(line)
-                wv_model[word] = np.asarray(ls[1:], dtype='float32')
+                if word in word_index:
+                    # emb_file_indata.write(line)
+                    wv_model[word] = np.asarray(ls[1:], dtype='float32')
     print("word_index size: {0}".format(len(word_index)))
     if uniform_init_emb:
         embedding_matrix = np.random.uniform(0, 1, (nb_words, embed_size))

@@ -4,6 +4,7 @@ from lgb import lgbm_train
 # from functools import reduce
 import numpy as np
 from keras_train import DNN_Model
+import keras_train
 # import gensim
 # from RCNN_Keras import get_word2vec, RCNN_Model
 # from RNN_Keras import RNN_Model
@@ -39,9 +40,9 @@ def nfold_train(train_data, train_label, model_types = None,
         # print(test_index[:100])
         # exit(0)
         if valide_label is None:
-            train_part = train_data[train_index]
+            train_part = train_data.iloc[train_index]
             train_part_label = train_label[train_index]
-            valide_part = train_data[test_index]
+            valide_part = train_data.iloc[test_index]
             valide_part_label = train_label[test_index]
             if train_weight is not None:
                 train_part_weight = train_weight[train_index]
@@ -103,7 +104,7 @@ def model_eval(model, model_type, data_frame):
     """
     """
     if model_type == 'l':
-        preds = model.predict(data_frame)
+        preds = model.predict(data_frame[keras_train.USED_CATEGORY_FEATURES + keras_train.USED_DENSE_FEATURES].values)
     elif model_type == 'k' or model_type == 'LR' or model_type == 'DNN' or model_type == 'rcnn' \
         or model_type == 'rnn' or model_type == 'cnn':
         preds = model.predict(data_frame, verbose = 2)

@@ -23,6 +23,7 @@ from sklearn import preprocessing
 from tensorflow.python.keras.preprocessing.text import Tokenizer, text_to_word_sequence
 from tensorflow.python.keras.preprocessing.sequence import pad_sequences
 from CNN_Keras import get_word2vec_embedding
+import lightgbm as lgb
 
 flags = tf.app.flags
 flags.DEFINE_string('input-training-data-path', "../../Data/", 'data dir override')
@@ -55,16 +56,23 @@ flags.DEFINE_string('search_iterations', "100,1500,100", 'search iterations')
 flags.DEFINE_string('input-previous-model-path', "../../Data/", 'data dir override')
 flags.DEFINE_bool("blend_tune", False, "Whether to tune the blen")
 flags.DEFINE_integer('vocab_size', 300000, 'vocab size')
-flags.DEFINE_integer('max_desc_len', 100, 'max description sequence length')
-flags.DEFINE_integer('max_title_len', 100, 'max title sequence length')
+flags.DEFINE_string('max_len', 100, 'max description sequence length')
+# flags.DEFINE_integer('max_title_len', 100, 'max title sequence length')
 flags.DEFINE_bool("load_wv_model", True, "Whether to load word2vec model")
 flags.DEFINE_string('wv_model_type', "fast_text", 'word2vec model type')
 flags.DEFINE_string('wv_model_file', "wiki.en.vec.indata", 'word2vec model file')
-flags.DEFINE_string('gram_embedding_dim', '300', 'gram embedding dim')
+flags.DEFINE_integer('gram_embedding_dim', '300', 'gram embedding dim')
 flags.DEFINE_string('kernel_size_list', "1,2,3", 'kernel size list')
+flags.DEFINE_string('filter_size', "32", 'cnn filter size list')
+flags.DEFINE_string('rnn_units', "0", 'rnn_units')
+flags.DEFINE_bool("uniform_init_emb", False, "Whether to uniform init the embedding")
+flags.DEFINE_bool("fix_wv_model", True, "Whether to fix word2vec model")
+flags.DEFINE_bool("lgb_boost_dnn", True, "Whether to fix word2vec model")
+flags.DEFINE_integer('lgb_ensemble_nfold', 5, 'number of lgb ensemble models')
 FLAGS = flags.FLAGS
 
 path = FLAGS.input_training_data_path
+FLAGS.max_len = [int(l) for l in FLAGS.max_len.strip().split(',')]
 
 def load_data():
     print("\nData Load Stage")
@@ -115,33 +123,47 @@ def load_data():
     for col in categorical:
         df[col].fillna('Unknown')
         df[col] = lbl.fit_transform(df[col].astype(str))
-    cat_max = df[keras_train.USED_FEATURE_LIST].max().astype('int64')
+    cat_max = df[keras_train.USED_CATEGORY_FEATURES].max().astype('int64')
     print (cat_max)
 
     textfeats = ["description", "title"]
     # print(df.head)
     # exit(0)
 
-    print('Tokenizer...')
-    data = df[textfeats].apply(lambda x: ' '.join(x), axis=1).values
-    tokenizer = Tokenizer(num_words = FLAGS.vocab_size)
-    tokenizer.fit_on_texts(data)
-    data = tokenizer.texts_to_sequences(df['description'])
-    df['description'] = pad_sequences(data, maxlen = FLAGS.max_desc_len)
-    data = tokenizer.texts_to_sequences(df['title'])
-    df['title'] = pad_sequences(data, maxlen = FLAGS.max_title_len)
-    if FLAGS.load_wv_model:
-        emb_weight = get_word2vec_embedding(location = FLAGS.input_training_data_path + FLAGS.wv_model_file, \
-                tokenizer = tokenizer, nb_words = FLAGS.vocab_size, embed_size = FLAGS.emb_dim, \
-                model_type = FLAGS.wv_model_type, uniform_init_emb = FLAGS.uniform_init_emb)
-    else:
-        if FLAGS.uniform_init_emb:
-            emb_weight = np.random.uniform(0, 1, (FLAGS.vocab_size, FLAGS.emb_dim))
+    if FLAGS.lgb_boost_dnn:
+        models = []
+        for i in range(FLAGS.lgb_ensemble_nfold):
+            bst = lgb.Booster(model_file= FLAGS.input_previous_model_path + '/model_' + str(0) + '_2018_05_31_04_04_47.txt')
+            models.append((bst, 'l'))
+        df['lgb_pred'] = models_eval(models, df)
+        keras_train.USED_FEATURE_LIST += ['lgb_pred']
+
+    emb_weight = None
+    if FLAGS.model_type == 'k':
+        print('Tokenizer...')
+        for cols in textfeats:
+            df[cols] = df[cols].astype(str).fillna('missing') # FILL NA
+        data = df[textfeats].apply(lambda x: ' '.join(x), axis=1).values
+        tokenizer = Tokenizer(num_words = FLAGS.vocab_size)
+        tokenizer.fit_on_texts(data)
+        for i, cols in enumerate(textfeats):
+            data = pad_sequences(tokenizer.texts_to_sequences(df[cols]), maxlen = FLAGS.max_len[i])
+            df[cols] = data.tolist()
+
+        if FLAGS.load_wv_model:
+            emb_weight = get_word2vec_embedding(location = FLAGS.input_training_data_path + FLAGS.wv_model_file, \
+                    tokenizer = tokenizer, nb_words = FLAGS.vocab_size, embed_size = FLAGS.gram_embedding_dim, \
+                    model_type = FLAGS.wv_model_type, uniform_init_emb = FLAGS.uniform_init_emb)
         else:
-            emb_weight = np.zeros((FLAGS.vocab_size, FLAGS.emb_dim))
+            if FLAGS.uniform_init_emb:
+                emb_weight = np.random.uniform(0, 1, (FLAGS.vocab_size, FLAGS.emb_dim))
+            else:
+                emb_weight = np.zeros((FLAGS.vocab_size, FLAGS.emb_dim))
 
     # df.drop(textfeats, axis=1,inplace=True)
     print(df.info())
+    # df.to_pickle('lgb_pred.pickle')
+    # exit(0)
 
     train_data = df.loc[traindex, keras_train.USED_FEATURE_LIST]
     train_label = y.values
@@ -175,12 +197,13 @@ def sub(mdoels, stacking_data = None, stacking_label = None, stacking_test_data 
         sub_re.to_csv(sub_name)
 
         # save model to file
-        if (models[0][1] == 'l'):
-            model_name = tmp_model_dir + "model" + time_label + ".txt"
-            models[0][0].save_model(model_name)
-        elif (models[0][1] == 'k'):
-            model_name = tmp_model_dir + "model" + time_label + ".h5"
-            models[0][0].model.save(model_name)
+        for i, model in enumerate(models):
+            if (model[1] == 'l'):
+                model_name = tmp_model_dir + "model_" + str(i) + time_label + ".txt"
+                model[0].save_model(model_name)
+            elif (model[1] == 'k'):
+                model_name = tmp_model_dir + "model_" + str(i) + time_label + ".h5"
+                model[0].model.save(model_name)
 
         scores_text_frame = pd.DataFrame(scores_text, columns = ["score_text"])
         score_text_file = tmp_model_dir + "score_text" + time_label + ".csv"
@@ -203,12 +226,10 @@ def sub(mdoels, stacking_data = None, stacking_label = None, stacking_test_data 
 if __name__ == "__main__":
     scores_text = []
     train_data, train_label, test_data, tid, valide_data, valide_label, weight, cat_max, emb_weight = load_data()
-    if not FLAGS.load_only_singleCnt and FLAGS.model_type == 'k':
-        test_data = list(test_data.transpose())
     if not FLAGS.load_stacking_data:
         models, stacking_data, stacking_label, stacking_test_data = nfold_train(train_data, train_label, flags = FLAGS, \
                 model_types = [FLAGS.model_type], scores = scores_text, test_data = test_data, \
-                valide_data = valide_data, valide_label = valide_label, cat_max = cat_max)
+                valide_data = valide_data, valide_label = valide_label, cat_max = cat_max, emb_weight = emb_weight)
     else:
         for i in range(train_label.shape[1]):
             models, stacking_data, stacking_label, stacking_test_data = nfold_train(train_data, train_label[:, i], flags = FLAGS, \

@@ -41,9 +41,9 @@ DENSE_FEATURES = [
 USED_CATEGORY_FEATURES = CATEGORY_FEATURES
 USED_DENSE_FEATURES = DENSE_FEATURES
 USED_SEQUENCE_FEATRURES = ["description", "title"]
-USED_FEATURE_LIST = USED_CATEGORY_FEATURES + USED_DENSE_FEATURE_LIST + USED_SEQUENCE_FEATRURES
+USED_FEATURE_LIST = USED_CATEGORY_FEATURES + USED_DENSE_FEATURES + USED_SEQUENCE_FEATRURES
 
-class RocAucEvaluation(Callback):
+class RmseEvaluation(Callback):
     def __init__(self, validation_data=(), interval=1, batch_interval = 1000000, verbose = 2, \
             scores = []):
         super(Callback, self).__init__()
@@ -58,11 +58,12 @@ class RocAucEvaluation(Callback):
     def on_epoch_end(self, epoch, logs={}):
         if epoch % self.interval == 0:
             y_pred = self.model.predict(self.X_val, verbose=0, batch_size=10240)
-            score = metrics.roc_auc_score(self.y_val, y_pred)
+            score = np.sqrt(metrics.mean_squared_error(self.y_val, y_pred))
             self.scores.append("epoch:{0} {1}".format(epoch + 1, score))
-            print("\n ROC-AUC - epoch: %d - score: %.6f \n" % (epoch+1, score))
+            print("\n RMSE - epoch: %d - score: %.6f \n" % (epoch+1, score))
     
     def on_batch_end(self, batch, logs={}):
+        return
         if(self.verbose >= 2) and (batch % self.batch_interval == 0):
             # y_pred = self.model.predict(self.X_val, verbose=0)
             # loss = metrics.log_loss(self.y_val, y_pred)
@@ -80,9 +81,9 @@ class DNN_Model:
         self.emb_dropout = flags.emb_dropout
         self.full_connect_dropout = flags.full_connect_dropout
         self.emb_dim = [int(e.strip()) for e in flags.emb_dim.strip().split(',')]
-        self.dense_input_len = len(DENSE_FEATURE_LIST)
+        self.dense_input_len = len(USED_DENSE_FEATURES)
         self.load_only_singleCnt = flags.load_only_singleCnt
-        self.max_token = flags.max_token
+        self.max_token = flags.vocab_size
         self.embedding_dim = flags.gram_embedding_dim
         self.fix_wv_model = flags.fix_wv_model
         self.filter_size = [int(hn.strip()) for hn in flags.filter_size.strip().split(',')]
@@ -90,10 +91,15 @@ class DNN_Model:
         self.rnn_units = [int(hn.strip()) for hn in flags.rnn_units.strip().split(',')]
         self.rnn_input_dropout = 0
         self.rnn_state_dropout = 0
+        self.max_len = flags.max_len
+        self.lgb_boost_dnn = flags.lgb_boost_dnn
+        # self.max_title_len = flags.max_title_len
+        self.top_k = 1
 
         self.scores = scores
         self.cat_max = cat_max
-        self.emb_weight = emb_weight 
+        self.emb_weight = emb_weight
+        self.embedding = Embedding(self.max_token, self.embedding_dim, weights=[self.emb_weight], trainable=not self.fix_wv_model)
         self.model = self.create_model()
 
 
@@ -101,7 +107,7 @@ class DNN_Model:
         full_conv_relu = Activation('relu')(linear_input)
         return full_conv_relu
         full_conv_sigmoid = Activation('sigmoid')(linear_input)
-        full_conv = concatenate([full_conv_relu, full_conv_sigmoid], axis = 1)
+        full_conv = Concatenate()([full_conv_relu, full_conv_sigmoid])
         return full_conv
 
 
@@ -109,8 +115,8 @@ class DNN_Model:
         full_connect = input
         for hn in self.hidden_dim:
             fc_in = full_connect
-            full_connect = Dense(hn, activation = 'relu')(full_connect)
-            # ull_connect = Concatenate()([fc_in, full_connect])
+            full_connect = Dense(hn)(full_connect)
+            full_connect = self.act_blend(full_connect)
             if self.full_connect_dropout > 0:
                 full_connect = Dropout(self.full_connect_dropout)(full_connect)
         return full_connect
@@ -122,8 +128,11 @@ class DNN_Model:
         output shape: batch * [sparse0, spare1, ..., sparsen, dense_features]
         """
         if sparse and dense:
-            return list(data[USED_CATEGORY_FEATURES].values.transpose()) + [data[USED_DENSE_FEATURES].values] + \
-                [data[USED_DENSE_FEATURES].values]
+            if self.lgb_boost_dnn:
+                return [data['lgb_pred'].values] + [np.array(list(data[f].values)) for f in USED_SEQUENCE_FEATRURES]
+            else:
+                return list(data[USED_CATEGORY_FEATURES].values.transpose()) + [data[USED_DENSE_FEATURES].values] \
+                + [np.array(list(data[f].values)) for f in USED_SEQUENCE_FEATRURES]
         elif sparse:
             return list(data[:, :len(USED_CATEGORY_FEATURES)].values.transpose())
         else:
@@ -140,6 +149,8 @@ class DNN_Model:
         DNN_Valide_Data = self.DNN_DataSet(valide_part, sparse = True, dense = True)
         callbacks = [
                 EarlyStopping(monitor='val_loss', patience=30, verbose=0),
+                RmseEvaluation(validation_data=(DNN_Valide_Data, valide_part_label), interval=1, \
+                    batch_interval = self.batch_interval, scores = self.scores)
                 ]
 
         self.model.fit(DNN_Train_Data, train_part_label, batch_size=self.batch_size, epochs=self.epochs,
@@ -179,11 +190,10 @@ class DNN_Model:
         return Concatenate()(conc_list)
 
 
-    def Create_CNN(self, inp):
+    def Create_CNN(self, inp, name_suffix):
         """
         """
-        embedding = Embedding(self.max_token, self.embedding_dim, weights=[self.emb_weight], trainable=not self.fix_wv_model)
-        x = embedding(inp)
+        x = self.embedding(inp)
         if self.emb_dropout > 0:
             x = SpatialDropout1D(self.emb_dropout)(x)
         # if self.char_split:
@@ -205,9 +215,9 @@ class DNN_Model:
 
         conc_list = cnn_list + rnn_list
         if len(conc_list) == 1:
-            conc = Lambda(lambda x: x, name = 'RCNN_CONC')(conc_list)
+            conc = Lambda(lambda x: x, name = 'RCNN_CONC' + name_suffix)(conc_list)
         else:
-            conc = Concatenate(name = 'RCNN_CONC')(conc_list)
+            conc = Concatenate(name = 'RCNN_CONC' + name_suffix)(conc_list)
         return conc
 
 
@@ -259,31 +269,53 @@ class DNN_Model:
         #     merge_input_len += emb_dim
         merge_sparse_emb = Concatenate(name = 'merge_sparse_emb_trainable')(sparse_emb_list)
 
-        # len_sparse_emb = len(sparse_emb_list)
-        # inner_prod_list = []
-        # for i in range(len_sparse_emb):
-        #     for j in range(i, len_sparse_emb):
-        #         inner_prd = Multiply()([sparse_emb_list[i], sparse_emb_list[j]])
-        #         inner_prod_list.append(inner_prd)
-        # merge_inner_prod = Concatenate(name = 'merge_inner_prod')(inner_prod_list)
-        # merge_wide_part = Concatenate(name = 'merge_wide_part')([merge_sparse_emb, merge_inner_prod])
-        # wide_pre_sigmoid = Dense(1)(merge_wide_part)
-
         dense_input = Input(shape=(self.dense_input_len,))
         norm_dense_input = BatchNormalization(name = 'Dense_BN_trainable')(dense_input)
 
-        desc_seq = Input(shape=(self.max_len,))
-        cnn_conc = self.Create_CNN(desc_seq)
-        title_seq = Input(shape=(self.max_len,))
-        cnn_conc = self.Create_CNN(desc_seq)
+        desc_seq = Input(shape=(self.max_len[0],))
+        desc_cnn_conc = self.Create_CNN(desc_seq, name_suffix = '_desc')
+        title_seq = Input(shape=(self.max_len[1],))
+        title_cnn_conc = self.Create_CNN(title_seq, name_suffix = '_title')
 
-        merge_input = Concatenate(name = 'merge_input_trainable')([merge_sparse_emb, norm_dense_input])
+        merge_input = Concatenate(name = 'merge_input_trainable')([merge_sparse_emb, norm_dense_input, \
+            desc_cnn_conc, title_cnn_conc
+        ])
         dense_output = self.full_connect_layer(merge_input)
         deep_pre_sigmoid = Dense(1, name = 'deep_pre_sigmoid_trainable')(dense_output)
 
         proba = Activation('sigmoid', name = 'proba_trainable')(deep_pre_sigmoid) #Add()([wide_pre_sigmoid, deep_pre_sigmoid]))
 
-        model = Model(sparse_input_list + [dense_input], proba) 
+        model = Model(sparse_input_list + [dense_input, \
+        # desc_seq, title_seq
+        ], proba) 
+        model.compile(optimizer='adam', loss='mean_squared_error') #, metrics = ['accuracy'])
+
+        # k_model = load_model('../Data/model_allSparse_09763.h5')
+        # print (k_model.summary())
+        # model.load_weights('../Data/model_allSparse_09763.h5', by_name=True)
+
+        return model
+
+    def create_boost_model(self):
+        """
+        """
+        dense_input = Input(shape=(1,))
+        norm_dense_input = BatchNormalization(name = 'Dense_BN_trainable')(dense_input)
+
+        desc_seq = Input(shape=(self.max_len[0],))
+        desc_cnn_conc = self.Create_CNN(desc_seq, name_suffix = '_desc')
+        title_seq = Input(shape=(self.max_len[1],))
+        title_cnn_conc = self.Create_CNN(title_seq, name_suffix = '_title')
+
+        merge_input = Concatenate(name = 'merge_input_trainable')([norm_dense_input, \
+            desc_cnn_conc, title_cnn_conc
+        ])
+        dense_output = self.full_connect_layer(merge_input)
+        deep_pre_sigmoid = Dense(1, name = 'deep_pre_sigmoid_trainable')(dense_output)
+
+        proba = Activation('sigmoid', name = 'proba_trainable')(deep_pre_sigmoid) #Add()([wide_pre_sigmoid, deep_pre_sigmoid]))
+
+        model = Model([dense_input, desc_seq, title_seq], proba) 
         model.compile(optimizer='adam', loss='mean_squared_error') #, metrics = ['accuracy'])
 
         # k_model = load_model('../Data/model_allSparse_09763.h5')
@@ -298,7 +330,10 @@ class DNN_Model:
         # if self.load_only_singleCnt:
         #     return self.create_dense_model()
         # else:
-        return self.create_embedding_model()
+        if self.lgb_boost_dnn:
+            return self.create_boost_model()
+        else:
+            return self.create_embedding_model()
 
 
 def dense_bn_layer(input_tensor, hn_num, name = None, dropout = True, bn = True):

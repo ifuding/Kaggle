@@ -1,7 +1,7 @@
 all_params = {
-	'num_leaves':7,
+	'num_leaves':14,
 	'min_sum_hessian_in_leaf':None,
-	'max_depth':3,
+	'max_depth':10,
 	'learning_rate':0.1,
 	'feature_fraction':None,
 	'verbose':0,
