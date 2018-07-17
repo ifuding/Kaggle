@@ -1,0 +1,16 @@
+all_params = {
+	'num_leaves':7,
+	'min_sum_hessian_in_leaf':None,
+	'max_depth':3,
+	'learning_rate':0.005,
+	'feature_fraction':1,
+	'verbose':0,
+	'num_boost_round':1500,
+	'drop_rate':None,
+	'bagging_fraction':None,
+	'bagging_freq':None,
+	'early_stopping_round':None,
+	'min_data_in_leaf':None,
+	'max_bin': None,
+	'scale_pos_weight':None,
+}
