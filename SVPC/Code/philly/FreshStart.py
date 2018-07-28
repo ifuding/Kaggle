@@ -15,13 +15,19 @@ from sklearn.ensemble import ExtraTreesRegressor
 # import dask.dataframe as dd
 # from dask.multiprocessing import get
 
-# from tqdm import tqdm, tqdm_notebook
-# tqdm.pandas(tqdm_notebook)
+from tqdm import tqdm, tqdm_notebook
+tqdm.pandas(tqdm_notebook)
+import concurrent.futures
 
 # Any results you write to the current directory are saved as output.
 path = "../../Data/"
 train = pd.read_csv(path + "train.csv")
 test = pd.read_csv(path + "test.csv")
+
+debug = False
+if debug:
+    train = train[:1000]
+    test = test[:1000]
 
 transact_cols = [f for f in train.columns if f not in ["ID", "target"]]
 y = np.log1p(train["target"]).values
@@ -45,8 +51,6 @@ def _get_leak(df, cols, lag=0):
        4. Get 1st time step of row in 3 (Currently, there is additional condition to only fetch value if we got exactly one match in step 3)"""
     series_str = df[cols[lag+2:]].apply(lambda x: "_".join(x.round(2).astype(str)), axis=1)
     series_shifted_str = df[cols].shift(lag+2, axis=1)[cols[lag+2:]].apply(lambda x: "_".join(x.round(2).astype(str)), axis=1)
-    print(series_str[0], "\n", series_shifted_str[0])
-    exit(0)
     target_rows = series_shifted_str.progress_apply(lambda x: np.where(x == series_str)[0])
     target_vals = target_rows.apply(lambda x: df.loc[x[0], cols[lag]] if len(x)==1 else 0)
     return target_vals
@@ -60,9 +64,26 @@ def get_all_leak(df, cols=None, nlags=15):
     #    res = [p.apply_async(_get_leak, args=(df, cols, i)) for i in range(nlags)]
     #    res = [r.get() for r in res]
     
-    for i in range(nlags):
-        print("Processing lag {}".format(i))
-        df["leaked_target_"+str(i)] = _get_leak(df, cols, i)
+    # for i in range(nlags):
+    #     print("Processing lag {}".format(i))
+    #     df["leaked_target_"+str(i)] = _get_leak(df, cols, i)
+
+    MAX_WORKERS = 4
+    col_ind_begin = 0
+    col_len = nlags
+    while col_ind_begin < col_len:
+        col_ind_end = min(col_ind_begin + MAX_WORKERS, col_len)
+        with concurrent.futures.ThreadPoolExecutor(max_workers = MAX_WORKERS) as executor:
+            future_predict = {executor.submit(_get_leak, df, cols, ind): ind for ind in range(col_ind_begin, col_ind_end)}
+            for future in concurrent.futures.as_completed(future_predict):
+                ind = future_predict[future]
+                try:
+                    df["leaked_target_"+str(ind)] = future.result()
+                except Exception as exc:
+                    print('%dth feature normalize generate an exception: %s' % (ind, exc))
+        col_ind_begin = col_ind_end
+        if col_ind_begin % 1 == 0:
+            print('Gen %d normalized features' % col_ind_begin)
     return df
 
 test["target"] = train["target"].mean()
@@ -92,8 +113,8 @@ for i in range(NLAGS):
 print("Leak values found in train and test ", sum(train["compiled_leak"] > 0), sum(test["compiled_leak"] > 0))
 print("% of correct leaks values in train ", sum(train["compiled_leak"] == train["target"])/sum(train["compiled_leak"] > 0))
 
-train.loc[train["compiled_leak"] == 0, "compiled_leak"] = train.loc[train["compiled_leak"] == 0, "nonzero_mean"]
-test.loc[test["compiled_leak"] == 0, "compiled_leak"] = test.loc[test["compiled_leak"] == 0, "nonzero_mean"]
+# train.loc[train["compiled_leak"] == 0, "compiled_leak"] = train.loc[train["compiled_leak"] == 0, "nonzero_mean"]
+# test.loc[test["compiled_leak"] == 0, "compiled_leak"] = test.loc[test["compiled_leak"] == 0, "nonzero_mean"]
 
 from sklearn.metrics import mean_squared_error
 np.sqrt(mean_squared_error(y, np.log1p(train["compiled_leak"]).fillna(14.49)))
@@ -101,4 +122,4 @@ np.sqrt(mean_squared_error(y, np.log1p(train["compiled_leak"]).fillna(14.49)))
 #submission
 sub = test[["ID"]]
 sub["target"] = test["compiled_leak"]
-sub.to_csv("baseline_submission_with_leaks.csv", index=False)
+sub.to_csv(path + "baseline_submission_with_leaks.csv", index=False)
