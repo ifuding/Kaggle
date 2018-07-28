@@ -10,16 +10,16 @@ def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fol
     """
     LGBM Training
     """
-    # CATEGORY_FEATURES = keras_train.USED_CATEGORY_FEATURES
+    CATEGORY_FEATURES = keras_train.USED_FEATURE_LIST
     FEATURE_LIST = keras_train.USED_FEATURE_LIST
     if flags.stacking:
         FEATURE_LIST += ['emb_' + str(i) for i in range(len(CATEGORY_FEATURES) * 5)] + ['k_pred']
     print("-----LGBM training-----")
 
     d_train = lgb.Dataset(train_part[FEATURE_LIST].values, train_part_label, weight = train_weight, 
-            feature_name = FEATURE_LIST) #, categorical_feature = CATEGORY_FEATURES,)#, init_score = train_part[:, -1])
+            feature_name = FEATURE_LIST) #, categorical_feature = CATEGORY_FEATURES) #, init_score = train_part[:, -1])
     d_valide = lgb.Dataset(valide_part[FEATURE_LIST].values, valide_part_label, weight = valide_weight,
-            feature_name = FEATURE_LIST) #, categorical_feature = CATEGORY_FEATURES,)#, init_score = valide_part[:, -1])
+            feature_name = FEATURE_LIST) #, categorical_feature = CATEGORY_FEATURES) #, init_score = valide_part[:, -1])
     params = {
             'task': 'train',
             'boosting_type': 'gbdt', #'gbdt',

@@ -3,7 +3,7 @@ from lgb import lgbm_train
 # import xgboost as xgb
 # from functools import reduce
 import numpy as np
-from keras_train import DNN_Model
+from keras_train import DNN_Model, VAE_Model
 import keras_train
 # import gensim
 # from RCNN_Keras import get_word2vec, RCNN_Model
@@ -41,9 +41,13 @@ def nfold_train(train_data, train_label, model_types = None,
         # exit(0)
         if valide_label is None:
             train_part = train_data.iloc[train_index]
-            train_part_label = train_label[train_index]
+            train_part_label = None
+            if model_types[0] != 'v' and model_types[0] != 'r':
+                train_part_label = train_label[train_index]
             valide_part = train_data.iloc[test_index]
-            valide_part_label = train_label[test_index]
+            valide_part_label = None
+            if model_types[0] != 'v' and model_types[0] != 'r':
+                valide_part_label = train_label[test_index]
             if train_weight is not None:
                 train_part_weight = train_weight[train_index]
                 valide_part_weight = train_weight[test_index]
@@ -55,18 +59,31 @@ def nfold_train(train_data, train_label, model_types = None,
             if train_weight is not None:
                 train_part_weight, valide_part_weight = train_weight, valide_weight
         print('fold: %d th train :-)' % (num_fold))
-        print('Train size: {} Valide size: {}'.format(train_part_label.shape[0], valide_part_label.shape[0]))
+        print('Train size: {} Valide size: {}'.format(train_part.shape[0], valide_part.shape[0]))
         onefold_models = []
         for model_type in model_types:
-            if model_type == 'k':
+            if model_type == 'k' or model_type == 'r':
                 # with tf.device('/cpu:0'):
-                model = DNN_Model(scores = scores, cat_max = cat_max, flags = flags, emb_weight = emb_weight)
+                model = DNN_Model(scores = scores, cat_max = cat_max, flags = flags, emb_weight = emb_weight, model_type = model_type)
                 if num_fold == 0:
                     print(model.model.summary())
                 model.train(train_part, train_part_label, valide_part, valide_part_label)
                 # if stacking:
                 #     model = Model(inputs = model.model.inputs, outputs = model.model.get_layer(name = 'merge_sparse_emb').output)
-                onefold_models.append((model, 'k'))
+                onefold_models.append((model, model_type))
+            elif model_type == 'v':
+                # with tf.device('/cpu:0'):
+                model = VAE_Model(flags = flags)
+                if num_fold == 0:
+                    print(model.model.summary())
+                model.train(train_part, train_part_label, valide_part, valide_part_label)
+                model = Model(inputs = model.model.inputs, outputs = model.model.get_layer(name = 'z').output)
+                # if stacking:
+                #     model = Model(inputs = model.model.inputs, outputs = model.model.get_layer(name = 'merge_sparse_emb').output)
+                onefold_models.append((model, 'v'))
+                stacking_data = model_eval(model, 'v', train_data) # for model in onefold_models]
+                # stacking_data = reduce((lambda x, y: np.c_[x, y]), stacking_data)
+                print('stacking_data shape: {0}'.format(stacking_data.shape))
             elif model_type == 'x':
                 model = xgb_train(train_part, train_part_label, valide_part, valide_part_label, num_fold)
                 onefold_models.append((model, 'x'))
@@ -106,8 +123,10 @@ def model_eval(model, model_type, data_frame):
     if model_type == 'l':
         preds = model.predict(data_frame[keras_train.USED_FEATURE_LIST].values)
     elif model_type == 'k' or model_type == 'LR' or model_type == 'DNN' or model_type == 'rcnn' \
-        or model_type == 'rnn' or model_type == 'cnn':
+        or model_type == 'r' or model_type == 'cnn':
         preds = model.predict(data_frame, verbose = 2)
+    elif model_type == 'v':
+        preds = model.predict(data_frame[keras_train.USED_FEATURE_LIST].values, verbose = 2)
     elif model_type == 't':
         print("ToDO")
     elif model_type == 'x':

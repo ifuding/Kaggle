@@ -16,7 +16,7 @@ from sklearn.cross_validation import KFold
 from sklearn.preprocessing import OneHotEncoder, LabelEncoder
 from sklearn.metrics import log_loss
 
-from tensorflow.python.keras import backend
+from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.layers import Dense, Input, Lambda, LSTM, TimeDistributed, SimpleRNN, \
         GRU, Bidirectional, GlobalAveragePooling1D, GlobalMaxPooling1D, Activation, \
         SpatialDropout1D, Conv2D, Conv1D, Reshape, Flatten, AveragePooling2D, MaxPooling2D, Dropout, \
@@ -26,7 +26,7 @@ from tensorflow.python.keras.models import Model, load_model
 from tensorflow.python.keras.callbacks import EarlyStopping, Callback
 from tensorflow.python.keras.regularizers import l1, l2
 from tensorflow.python.keras.optimizers import SGD, RMSprop, Adam, Nadam
-
+from tensorflow.python.keras.losses import mean_squared_error, binary_crossentropy
 
 CATEGORY_FEATURES = [
     "user_id",
@@ -70,7 +70,7 @@ class RmseEvaluation(Callback):
 class DNN_Model:
     """
     """
-    def __init__(self, scores, cat_max, flags, emb_weight):
+    def __init__(self, scores, cat_max, flags, emb_weight, model_type):
         self.hidden_dim = [int(hn.strip()) for hn in flags.full_connect_hn.strip().split(',')]
         self.batch_size = flags.batch_size
         self.epochs = flags.epochs
@@ -96,12 +96,13 @@ class DNN_Model:
         self.scores = scores
         self.cat_max = cat_max
         self.emb_weight = emb_weight
+        self.model_type = model_type
         self.model = self.create_model()
 
 
     def act_blend(self, linear_input):
         full_conv_relu = Activation('relu')(linear_input)
-        return full_conv_relu
+        # return full_conv_relu
         full_conv_sigmoid = Activation('sigmoid')(linear_input)
         full_conv = Concatenate()([full_conv_relu, full_conv_sigmoid])
         return full_conv
@@ -111,10 +112,13 @@ class DNN_Model:
         full_connect = input
         for hn in self.hidden_dim:
             fc_in = full_connect
+            # full_connect = Dense(hn, kernel_regularizer = l2(0.001), activity_regularizer = l1(0.001))(full_connect)
             full_connect = Dense(hn)(full_connect)
+            # full_connect = BatchNormalization()(full_connect)
             full_connect = self.act_blend(full_connect)
             if self.full_connect_dropout > 0:
                 full_connect = Dropout(self.full_connect_dropout)(full_connect)
+            full_connect = Concatenate()([fc_in, full_connect])
         return full_connect
 
 
@@ -123,17 +127,15 @@ class DNN_Model:
         input shape: batch * n_feature
         output shape: batch * [sparse0, spare1, ..., sparsen, dense_features]
         """
-        if sparse and dense:
-            if self.lgb_boost_dnn:
-                return [data['lgb_pred'].values] + [np.array(list(data[f].values)) for f in USED_SEQUENCE_FEATRURES]
-            else:
-                return list(data[USED_CATEGORY_FEATURES].values.transpose()) + [data[USED_DENSE_FEATURES].values] \
-                + [np.array(list(data[f].values)) for f in USED_SEQUENCE_FEATRURES]
-        elif sparse:
-            return list(data[:, :len(USED_CATEGORY_FEATURES)].values.transpose())
+        if self.model_type == 'r':
+            return np.reshape(data.values, (-1, self.dense_input_len, 1))
         else:
             return data.values
 
+    def RNN_Target(self, data, label):
+        """
+        """
+        return np.c_[data.values[:, 1:], label]
 
     def train(self, train_part, train_part_label, valide_part, valide_part_label):
         """
@@ -143,8 +145,11 @@ class DNN_Model:
 
         DNN_Train_Data = self.DNN_DataSet(train_part, sparse = False, dense = True)
         DNN_Valide_Data = self.DNN_DataSet(valide_part, sparse = False, dense = True)
+        if self.model_type == 'r':
+            train_part_label = None #self.RNN_Target(train_part, train_part_label)
+            valide_part_label = None #self.RNN_Target(valide_part, valide_part_label)
         callbacks = [
-                EarlyStopping(monitor='val_loss', patience=30, verbose=0),
+                EarlyStopping(monitor='val_loss', patience=3, verbose=0),
                 RmseEvaluation(validation_data=(DNN_Valide_Data, valide_part_label), interval=1, \
                     batch_interval = self.batch_interval, scores = self.scores)
                 ]
@@ -155,6 +160,8 @@ class DNN_Model:
                     , callbacks=callbacks
                     # , class_weight = {0: 1., 1: 5.}
                     )
+        # print(self.model.get_weights())
+        # exit(0)
         return self.model
 
 
@@ -164,6 +171,8 @@ class DNN_Model:
         """
         print("-----DNN Test-----")
         pred = self.model.predict(self.DNN_DataSet(test_part, sparse = False, dense = True), batch_size=10240, verbose=verbose)
+        if self.model_type == 'r':
+            pred = pred[:, -1]
         return pred
 
 
@@ -175,43 +184,46 @@ class DNN_Model:
             max_pool = GlobalMaxPooling1D()(input)
         conc = Concatenate()([avg_pool, max_pool])
         return conc
-    
-
-    def ConvBlock(self, x, filter_size):
-        conc_list =[]
-        for kernel_size in self.kernel_size_list:
-            kernel_maps = Conv1D(filters = filter_size, kernel_size = kernel_size, activation = 'relu')(x)
-            kernel_conc = self.pooling_blend(kernel_maps)
-            conc_list.append(kernel_conc)
-        return Concatenate()(conc_list)
-
-
-    def Create_CNN(self, inp, name_suffix):
-        """
-        """
-        pass
-        return conc
 
 
     def create_dense_model(self):
         """
         """
         dense_input = Input(shape=(self.dense_input_len,))
+        drop_dense_input = Dropout(self.full_connect_dropout)(dense_input)
         # norm_dense_input = BatchNormalization()(dense_input)
-        dense_output = self.full_connect_layer(dense_input)
+        dense_output = self.full_connect_layer(drop_dense_input)
         proba = Dense(1, activation = 'relu')(dense_output)
 
         model = Model(dense_input, proba) 
         model.compile(optimizer='adam', loss='mean_squared_error')
 
         return model
-
-
-    def create_embedding_model(self):
+    
+    def create_rnn_model(self):
         """
         """
-        pass
+        seq_input = Input(shape=(self.dense_input_len, 1))
+        seq_output = Input(shape=(self.dense_input_len, 1))
+        norm_seq_input = BatchNormalization(name = 'Dense_BN_trainable')(seq_input)
+        rnn_out = Bidirectional(LSTM(self.rnn_units[0], return_sequences = True))(norm_seq_input)
+        rnn_out = Bidirectional(LSTM(self.rnn_units[0], return_sequences = True))(rnn_out)
+        seq_pred = TimeDistributed(Dense(self.hidden_dim[0], activation = 'relu'))(rnn_out)
+        seq_pred = TimeDistributed(Dense(1, activation = 'relu'))(seq_pred)
+        # seq_pred = Dense(1, activation = 'relu')(rnn_out)
+        seq_pred = Reshape((self.dense_input_len,))(seq_pred)
+        seq_input_reshape = Reshape((self.dense_input_len,))(seq_input)
+
+        model = Model(seq_input, seq_pred)
+        loss = K.mean(mean_squared_error(seq_input_reshape[:, 1:], seq_pred[:, :-1]))
+        model.add_loss(loss)
+
+        # def _mean_squared_error(y_true, y_pred):
+        #     return K.mean(K.square(y_pred - y_true))
+        model.compile(optimizer='adam', loss = None) #_mean_squared_error)
+
         return model
+
 
     def create_boost_model(self):
         """
@@ -233,7 +245,7 @@ class DNN_Model:
         proba = Activation('sigmoid', name = 'proba_trainable')(deep_pre_sigmoid) #Add()([wide_pre_sigmoid, deep_pre_sigmoid]))
 
         model = Model([dense_input, desc_seq, title_seq], proba) 
-        model.compile(optimizer='adam', loss='mean_squared_error') #, metrics = ['accuracy'])
+        model.compile(optimizer='sgd', loss='mean_squared_error') #, metrics = ['accuracy'])
 
         # k_model = load_model('../Data/model_allSparse_09763.h5')
         # print (k_model.summary())
@@ -249,8 +261,136 @@ class DNN_Model:
         # else:
         if self.lgb_boost_dnn:
             return self.create_boost_model()
+        elif self.model_type == 'r':
+            return self.create_rnn_model()
         else:
             return self.create_dense_model()
+
+
+class VAE_Model:
+    """
+    """
+    def __init__(self, flags):
+        self.hidden_dim = [int(hn.strip()) for hn in flags.full_connect_hn.strip().split(',')]
+        self.batch_size = flags.batch_size
+        self.epochs = flags.epochs
+        self.batch_interval = flags.batch_interval
+        self.emb_dropout = flags.emb_dropout
+        self.full_connect_dropout = flags.full_connect_dropout
+        self.mse = flags.vae_mse
+        self.original_dim = len(USED_FEATURE_LIST)
+        self.intermediate_dim = flags.vae_intermediate_dim
+        self.latent_dim = flags.vae_latent_dim
+        self.model = self.create_model()
+    
+    # reparameterization trick
+    # instead of sampling from Q(z|X), sample eps = N(0,I)
+    # z = z_mean + sqrt(var)*eps
+    def sampling(self, args):
+        """Reparameterization trick by sampling fr an isotropic unit Gaussian.
+        # Arguments:
+            args (tensor): mean and log of variance of Q(z|X)
+        # Returns:
+            z (tensor): sampled latent vector
+        """
+        z_mean, z_log_var = args
+        batch = K.shape(z_mean)[0]
+        dim = K.int_shape(z_mean)[1]
+        # by default, random_normal has mean=0 and std=1.0
+        epsilon = K.random_normal(shape=(batch, dim))
+        return z_mean + K.exp(0.5 * z_log_var) * epsilon
+
+    def create_model(self):
+        """
+        """
+        # VAE model = encoder + decoder
+        # build encoder model
+        input_shape = (self.original_dim, )
+        inputs = Input(shape=input_shape, name='encoder_input')
+        x = Dense(self.intermediate_dim, activation='relu')(inputs)
+        z_mean = Dense(self.latent_dim, name='z_mean')(x)
+        z_log_var = Dense(self.latent_dim, name='z_log_var')(x)
+
+        # use reparameterization trick to push the sampling out as input
+        # note that "output_shape" isn't necessary with the TensorFlow backend
+        z = Lambda(self.sampling, name='z')([z_mean, z_log_var])
+
+        # instantiate encoder model
+        # encoder = Model(inputs, [z_mean, z_log_var, z], name='encoder')
+        # print(encoder.summary())
+        # plot_model(encoder, to_file='vae_mlp_encoder.png', show_shapes=True)
+
+        # build decoder model
+        # latent_inputs = Input(shape=(self.latent_dim,), name='z_sampling')
+        # x = Dense(self.intermediate_dim, activation='relu')(latent_inputs)
+        x = Dense(self.intermediate_dim, activation='relu')(z)
+        outputs = Dense(self.original_dim, activation='sigmoid')(x)
+
+        # instantiate decoder model
+        # decoder = Model(latent_inputs, outputs, name='decoder')
+        # print(decoder.summary())
+        # plot_model(decoder, to_file='vae_mlp_decoder.png', show_shapes=True)
+
+        # instantiate VAE model
+        # outputs = decoder(encoder(inputs)[2])
+        vae = Model(inputs, outputs, name='vae_mlp')
+
+        # VAE loss = mse_loss or xent_loss + kl_loss
+        if self.mse:
+            reconstruction_loss = mean_squared_error(inputs, outputs)
+        else:
+            reconstruction_loss = binary_crossentropy(inputs,
+                                                    outputs)
+
+        reconstruction_loss *= self.original_dim
+        kl_loss = 1 + z_log_var - K.square(z_mean) - K.exp(z_log_var)
+        kl_loss = K.sum(kl_loss, axis=-1)
+        kl_loss *= -0.5
+        vae_loss = K.mean(reconstruction_loss + kl_loss)
+        vae.add_loss(vae_loss)
+        vae.compile(optimizer='adam', loss = None)
+        # print (vae.summary())
+
+        return vae
+
+    def DNN_DataSet(self, data):
+        """
+        """
+        return data.values
+
+
+    def train(self, train_part, train_part_label, valide_part, valide_part_label):
+        """
+        Keras Training
+        """
+        print("-----DNN training-----")
+
+        DNN_Train_Data = self.DNN_DataSet(train_part)
+        DNN_Valide_Data = self.DNN_DataSet(valide_part)
+        callbacks = [
+                EarlyStopping(monitor='val_loss', patience=3, verbose=0),
+                # RmseEvaluation(validation_data=(DNN_Valide_Data, valide_part_label), interval=1, \
+                #     batch_interval = self.batch_interval, scores = self.scores)
+                ]
+
+        self.model.fit(DNN_Train_Data, batch_size=self.batch_size, epochs=self.epochs,
+                    shuffle=True, verbose=2,
+                    validation_data=(DNN_Valide_Data, None)
+                    , callbacks=callbacks
+                    # , class_weight = {0: 1., 1: 5.}
+                    )
+        # print(self.model.get_weights())
+        # exit(0)
+        return self.model
+
+
+    def predict(self, test_part, batch_size = 1024, verbose=2):
+        """
+        Keras Training
+        """
+        print("-----DNN Test-----")
+        pred = self.model.predict(self.DNN_DataSet(test_part), batch_size=10240, verbose=verbose)
+        return pred
 
 
 def dense_bn_layer(input_tensor, hn_num, name = None, dropout = True, bn = True):
