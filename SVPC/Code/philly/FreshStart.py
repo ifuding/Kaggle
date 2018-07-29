@@ -19,10 +19,12 @@ from tqdm import tqdm, tqdm_notebook
 tqdm.pandas(tqdm_notebook)
 import concurrent.futures
 
+import pickle
+
 # Any results you write to the current directory are saved as output.
 path = "../../Data/"
-train = pd.read_csv(path + "train.csv")
-test = pd.read_csv(path + "test.csv")
+train = pd.read_csv(path + "train.csv", index_col = 'ID')
+test = pd.read_csv(path + "test.csv", index_col = 'ID')
 
 debug = False
 if debug:
@@ -42,17 +44,19 @@ cols = ['f190486d6', '58e2e02e6', 'eeb9cd3aa', '9fd594eec', '6eef030c1',
        '190db8488',  'adb64ff71', 'c47340d97', 'c5a231d81', '0ff32eb98'] 
 
 from multiprocessing import Pool
-CPU_CORES = 1
-def _get_leak(df, cols, lag=0):
+CPU_CORES = 6
+def _get_leak(df, cols, search_ind, lag=0):
     """ To get leak value, we do following:
        1. Get string of all values after removing first two time steps
        2. For all rows we shift the row by two steps and again make a string
        3. Just find rows where string from 2 matches string from 1
        4. Get 1st time step of row in 3 (Currently, there is additional condition to only fetch value if we got exactly one match in step 3)"""
     series_str = df[cols[lag+2:]].apply(lambda x: "_".join(x.round(2).astype(str)), axis=1)
-    series_shifted_str = df[cols].shift(lag+2, axis=1)[cols[lag+2:]].apply(lambda x: "_".join(x.round(2).astype(str)), axis=1)
+    series_shifted_str = df.loc[search_ind, cols].shift(lag+2, axis=1)[cols[lag+2:]].apply(lambda x: "_".join(x.round(2).astype(str)), axis=1)
     target_rows = series_shifted_str.progress_apply(lambda x: np.where(x == series_str)[0])
-    target_vals = target_rows.apply(lambda x: df.loc[x[0], cols[lag]] if len(x)==1 else 0)
+    # print(target_rows)
+    del series_str, series_shifted_str
+    target_vals = target_rows.apply(lambda x: df.iloc[x[0]][cols[lag]] if len(x)==1 else 0)
     return target_vals
 
 def get_all_leak(df, cols=None, nlags=15):
@@ -60,39 +64,57 @@ def get_all_leak(df, cols=None, nlags=15):
     We just recursively fetch target value for different lags
     """
     df =  df.copy()
-    #with Pool(processes=CPU_CORES) as p:
-    #    res = [p.apply_async(_get_leak, args=(df, cols, i)) for i in range(nlags)]
-    #    res = [r.get() for r in res]
-    
+    with Pool(processes=CPU_CORES) as p:
+        begin_ind = 0
+        end_ind = 0
+        leak_target = pd.Series(0, index = df.index)
+        while begin_ind < nlags:
+            end_ind = min(begin_ind + CPU_CORES, nlags)
+            search_ind = (leak_target == 0)
+            # print(search_ind)
+            print('begin_ind: ', begin_ind, 'end_ind: ', end_ind, "search_ind_len: ", search_ind.sum())
+            res = [p.apply_async(_get_leak, args=(df, cols, search_ind, i)) for i in range(begin_ind, end_ind)]
+            for r in res:
+                target_vals = r.get()
+                leak_target[target_vals.index] = target_vals
+                # print("leak_target", leak_target)
+                # res = [r.get() for r in res]
+            begin_ind = end_ind
+    df['leak_target'] = leak_target
     # for i in range(nlags):
     #     print("Processing lag {}".format(i))
     #     df["leaked_target_"+str(i)] = _get_leak(df, cols, i)
 
-    MAX_WORKERS = 4
-    col_ind_begin = 0
-    col_len = nlags
-    while col_ind_begin < col_len:
-        col_ind_end = min(col_ind_begin + MAX_WORKERS, col_len)
-        with concurrent.futures.ThreadPoolExecutor(max_workers = MAX_WORKERS) as executor:
-            future_predict = {executor.submit(_get_leak, df, cols, ind): ind for ind in range(col_ind_begin, col_ind_end)}
-            for future in concurrent.futures.as_completed(future_predict):
-                ind = future_predict[future]
-                try:
-                    df["leaked_target_"+str(ind)] = future.result()
-                except Exception as exc:
-                    print('%dth feature normalize generate an exception: %s' % (ind, exc))
-        col_ind_begin = col_ind_end
-        if col_ind_begin % 1 == 0:
-            print('Gen %d normalized features' % col_ind_begin)
+    # MAX_WORKERS = 4
+    # col_ind_begin = 0
+    # col_len = nlags
+    # while col_ind_begin < col_len:
+    #     col_ind_end = min(col_ind_begin + MAX_WORKERS, col_len)
+    #     with concurrent.futures.ThreadPoolExecutor(max_workers = MAX_WORKERS) as executor:
+    #         future_predict = {executor.submit(_get_leak, df, cols, ind): ind for ind in range(col_ind_begin, col_ind_end)}
+    #         for future in concurrent.futures.as_completed(future_predict):
+    #             ind = future_predict[future]
+    #             try:
+    #                 df["leaked_target_"+str(ind)] = future.result()
+    #             except Exception as exc:
+    #                 print('%dth feature normalize generate an exception: %s' % (ind, exc))
+    #     col_ind_begin = col_ind_end
+    #     if col_ind_begin % 1 == 0:
+    #         print('Gen %d normalized features' % col_ind_begin)
     return df
 
 test["target"] = train["target"].mean()
 
-all_df = pd.concat([train[["ID", "target"] + cols], test[["ID", "target"]+ cols]]).reset_index(drop=True)
+# all_df = pd.concat([train[["ID", "target"] + cols], test[["ID", "target"]+ cols]]).reset_index(drop=True)
+all_df = pd.concat([train[["target"] + cols], test[["target"]+ cols]]) #.reset_index(drop=True)
 all_df.head()
 
-NLAGS = 25 #Increasing this might help push score a bit
+NLAGS = 30 #Increasing this might help push score a bit
 all_df = get_all_leak(all_df, cols=cols, nlags=NLAGS)
+
+with open(path + 'leak_target.pickle', 'wb+') as handle:
+    pickle.dump(all_df[['target', 'leak_target']], handle, protocol=pickle.HIGHEST_PROTOCOL)
+exit(0)
 
 leaky_cols = ["leaked_target_"+str(i) for i in range(NLAGS)]
 train = train.join(all_df.set_index("ID")[leaky_cols], on="ID", how="left")
