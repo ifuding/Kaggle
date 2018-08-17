@@ -19,7 +19,7 @@ from sklearn.metrics import log_loss
 from tensorflow.python.keras import backend as K
 from tensorflow.python.keras.layers import Dense, Input, Lambda, LSTM, TimeDistributed, SimpleRNN, \
         GRU, Bidirectional, GlobalAveragePooling1D, GlobalMaxPooling1D, Activation, \
-        SpatialDropout1D, Conv2D, Conv1D, Reshape, Flatten, AveragePooling2D, MaxPooling2D, Dropout, \
+        SpatialDropout1D, Conv2D, Conv1D, Reshape, Flatten, AveragePooling2D, MaxPooling2D, Dropout, AlphaDropout, \
         MaxPooling1D, AveragePooling1D, Embedding, Concatenate, BatchNormalization, Multiply, Add
 # from tensorflow.python.keras.layers import concatenate
 from tensorflow.python.keras.models import Model, load_model
@@ -101,10 +101,12 @@ class DNN_Model:
 
 
     def act_blend(self, linear_input):
+        full_conv_selu = Activation('selu')(linear_input)
         full_conv_relu = Activation('relu')(linear_input)
         # return full_conv_relu
         full_conv_sigmoid = Activation('sigmoid')(linear_input)
-        full_conv = Concatenate()([full_conv_relu, full_conv_sigmoid])
+        full_conv_tanh = Activation('tanh')(linear_input)
+        full_conv = Concatenate()([full_conv_sigmoid, full_conv_relu, full_conv_selu])
         return full_conv
 
 
@@ -113,12 +115,13 @@ class DNN_Model:
         for hn in self.hidden_dim:
             fc_in = full_connect
             # full_connect = Dense(hn, kernel_regularizer = l2(0.001), activity_regularizer = l1(0.001))(full_connect)
-            full_connect = Dense(hn)(full_connect)
+            full_connect = Concatenate()([Dense(hn, kernel_initializer='lecun_uniform', activation = 'relu')(full_connect), 
+                Dense(hn, kernel_initializer='lecun_uniform', activation = 'selu')(full_connect)])
             # full_connect = BatchNormalization()(full_connect)
-            full_connect = self.act_blend(full_connect)
+            # full_connect = self.act_blend(full_connect)
             if self.full_connect_dropout > 0:
-                full_connect = Dropout(self.full_connect_dropout)(full_connect)
-            full_connect = Concatenate()([fc_in, full_connect])
+                full_connect = Dropout(self.full_connect_dropout)(full_connect) #Dropout(self.full_connect_dropout)(full_connect)
+            # full_connect = Concatenate()([fc_in, full_connect])
         return full_connect
 
 
@@ -149,7 +152,7 @@ class DNN_Model:
             train_part_label = None #self.RNN_Target(train_part, train_part_label)
             valide_part_label = None #self.RNN_Target(valide_part, valide_part_label)
         callbacks = [
-                EarlyStopping(monitor='val_loss', patience=3, verbose=0),
+                EarlyStopping(monitor='val_loss', patience=50, verbose=0),
                 RmseEvaluation(validation_data=(DNN_Valide_Data, valide_part_label), interval=1, \
                     batch_interval = self.batch_interval, scores = self.scores)
                 ]
@@ -190,10 +193,10 @@ class DNN_Model:
         """
         """
         dense_input = Input(shape=(self.dense_input_len,))
-        drop_dense_input = Dropout(self.full_connect_dropout)(dense_input)
-        # norm_dense_input = BatchNormalization()(dense_input)
-        dense_output = self.full_connect_layer(drop_dense_input)
-        proba = Dense(1, activation = 'relu')(dense_output)
+        # drop_dense_input = Dropout(self.full_connect_dropout)(dense_input)
+        norm_dense_input = BatchNormalization()(dense_input)
+        dense_output = self.full_connect_layer(norm_dense_input)
+        proba = Dense(1, activation = 'softplus')(dense_output)
 
         model = Model(dense_input, proba) 
         model.compile(optimizer='adam', loss='mean_squared_error')
@@ -205,9 +208,9 @@ class DNN_Model:
         """
         seq_input = Input(shape=(self.dense_input_len, 1))
         seq_output = Input(shape=(self.dense_input_len, 1))
-        norm_seq_input = BatchNormalization(name = 'Dense_BN_trainable')(seq_input)
-        rnn_out = Bidirectional(LSTM(self.rnn_units[0], return_sequences = True))(norm_seq_input)
-        rnn_out = Bidirectional(LSTM(self.rnn_units[0], return_sequences = True))(rnn_out)
+        # norm_seq_input = BatchNormalization(name = 'Dense_BN_trainable')(seq_input)
+        rnn_out = Bidirectional(LSTM(self.rnn_units[0], return_sequences = True, activation = 'relu'))(seq_input)
+        rnn_out = Bidirectional(LSTM(self.rnn_units[1], return_sequences = True, activation = 'relu'))(rnn_out)
         seq_pred = TimeDistributed(Dense(self.hidden_dim[0], activation = 'relu'))(rnn_out)
         seq_pred = TimeDistributed(Dense(1, activation = 'relu'))(seq_pred)
         # seq_pred = Dense(1, activation = 'relu')(rnn_out)

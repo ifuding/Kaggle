@@ -52,19 +52,42 @@ def keras_pred(valide_data, valide_label):
     return y_pred
 
 def blend(sub1, sub2):
-    data_dir = "../Data/"
-    sub1 = pd.read_csv(data_dir + 'sub_2018_05_04_03_53_23.csv')
-    sub2 = pd.read_csv(data_dir + 'sub_2018_05_07_09_48_13.csv')
-    target = 'is_attributed'
+    data_dir = "../../Data/"
+    sub1 = pd.read_csv(data_dir + '/feature_scoring_vs_zeros/leaky_submission.csv', index_col = 'ID')
+    sub2 = pd.read_csv(data_dir + 'submission_132.csv', index_col = 'ID')
+
+    sub3 = pd.read_csv(data_dir + 'sub_2018_08_09_07_43_07.csv', index_col = 'ID')
+    sub4 = pd.read_csv(data_dir + 'submission_134.csv', index_col = 'ID')
+    target = 'target'
+    sub1.rename(columns={'target': 't1'}, inplace = True)
+    sub2.rename(columns={'target': 't2'}, inplace = True)
+    sub3.rename(columns={'target': 't3'}, inplace = True)
+    sub4.rename(columns={'target': 't4'}, inplace = True)
+
+    blend1 = pd.concat([sub1, sub4], axis = 1)
+    print(blend1.head())
+    blend1['target'] = 0.8 * blend1['t1'] + 0.2 * blend1['t4']
+
+    blend2 = pd.concat([sub2, sub3], axis = 1)
+    blend2['target'] = 0.8 * blend2['t3'] + 0.2 * blend2['t2']
+
+    blend3 = blend1
+    blend3['target'] = 0.5 * blend3['target'] + 0.5 * blend2['target']
+
+    # leak_target = pd.read_csv(data_dir + 'target_leaktarget_30_1.csv', index_col = 'ID')
+    # leak_target = leak_target.loc[sub1.index, 'leak_target']
+    # leak_target = leak_target[leak_target != 0]
     #blend 1
-    blend = pd.merge(sub1, sub2, how='left', on='click_id')
-    print (blend.info())
-    blend[target] = np.sqrt(blend[target + "_x"] * blend[target+'_y'])
-    blend[target] = blend[target].clip(0+1e12, 1-1e12)
+    # blend = sub1 #pd.merge(sub1, sub2, how='left', on='ID')
+    # print (blend.info())
+    # blend[target] = np.sqrt(blend[target + "_x"] * blend[target+'_y'])
+    # blend[target] = (blend[target + "_x"] + blend[target+'_y'])/2
+    # blend[target][leak_target.index] = leak_target
+    # blend[target] = blend[target].clip(0+1e12, 1-1e12)
 
     time_label = strftime('_%Y_%m_%d_%H_%M_%S', gmtime())
     sub_name = data_dir + "sub" + time_label + ".csv"
-    blend[['click_id', target]].to_csv(sub_name, index=False)
+    blend3[[target]].to_csv(sub_name)
 
 def blend_tune(valide_label, sub1, sub2):
     sub1 = sub1.reshape((len(valide_label), -1))
