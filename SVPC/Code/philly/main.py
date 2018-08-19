@@ -334,7 +334,7 @@ def load_data(col):
     if FLAGS.load_from_pickle:
         with open(path + 'train_test_nonormalize.pickle', 'rb') as handle:
              df, test_ID, y_train, train_row = pickle.load(handle)
-        leak_target = pd.read_csv(path + 'target_leaktarget_30_1.csv', index_col = 'ID')
+        leak_target = pd.read_csv(path + 'add_featrure_set_target_leaktarget_38_3.csv', index_col = 'ID')
         leak_target = leak_target.loc[df[train_row:].index, 'leak_target']
         leak_target = leak_target[leak_target != 0]
         print ('leak_target shape: ', leak_target.shape)
@@ -355,7 +355,7 @@ def load_data(col):
         with open(path + 'hist_df.pickle', 'rb+') as handle:
             hist_df = pickle.load(handle)        
 
-        # append_pred_columns(df)
+        append_pred_columns(df)
         top_cols_pred = [col + '_p' for col in top_cols]
         top_cols_new = [col + '_new' for col in top_cols]
         # df[top_cols_pred + top_cols_new].to_csv('new_cols.csv')
@@ -396,7 +396,7 @@ def load_data(col):
         pred_nz_mean = pd.read_csv(path + '_pred_nz_mean_2018_08_14_16.csv', index_col = 'ID').rename(columns = {'target': 'aug_pred_nz_mean'})
         pred_nz_min = pd.read_csv(path + '_pred_nz_min_2018_08_14_17.csv', index_col = 'ID').rename(columns = {'target': 'aug_pred_nz_min'})
         df.drop(columns = origin_cols, inplace = True)
-        df = pd.concat([sort_df, hist_df, pred_mean, pred_max, pred_nz_mean, pred_nz_min], axis = 1, sort = False)
+        df = pd.concat([sort_df, hist_df, statistic_features, pred_mean, pred_max, pred_nz_mean, pred_nz_min], axis = 1, sort = False)
         print("Shape after append columns: ", df.shape)
         # with Pool(processes=8) as p:
         #     res = [p.apply_async(select_pred, args=(df, col)) for col in top_cols[:5]]

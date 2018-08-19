@@ -18,11 +18,11 @@ from sklearn.ensemble import ExtraTreesRegressor
 from tqdm import tqdm, tqdm_notebook
 tqdm.pandas(tqdm_notebook)
 import concurrent.futures
-
+import time
 import pickle
 
-from leak_rows import leak_list
-leak_list = leak_list[:32]
+from leak_cols import *
+leak_list = LEAK_LIST
 
 # Any results you write to the current directory are saved as output.
 path = "../../Data/"
@@ -33,6 +33,7 @@ debug = False
 if debug:
     train = train[:1000]
     test = test[:1000]
+IsTrain = False
 
 transact_cols = [f for f in train.columns if f not in ["ID", "target"]]
 y = np.log1p(train["target"]).values
@@ -47,7 +48,7 @@ cols = ['f190486d6', '58e2e02e6', 'eeb9cd3aa', '9fd594eec', '6eef030c1',
        '190db8488',  'adb64ff71', 'c47340d97', 'c5a231d81', '0ff32eb98'] 
 
 from multiprocessing import Pool
-CPU_CORES = 8
+CPU_CORES = 1
 NZ_NUM = 3
 def _get_leak(df, cols, search_ind, lag=0):
     """ To get leak value, we do following:
@@ -60,10 +61,9 @@ def _get_leak(df, cols, search_ind, lag=0):
     for ef in leak_list:
         f1 += ef[:((lag+2) * -1)]
         f2 += ef[(lag+2):]
-    series_str = df[f2] #df.loc[df[cols[lag]] != 0, cols[lag+2:]]
-    series_str.loc[:, 'nz'] = series_str.apply(lambda x: len(x[x!=0]), axis=1)
-    series_str = series_str[series_str['nz'] >= NZ_NUM]
-    series_str.drop(columns = ['nz'], inplace = True)
+    series_str = df[f2]
+    nz = series_str.apply(lambda x: len(x[x!=0]), axis=1)
+    series_str = series_str[nz >= NZ_NUM]
     series_str = series_str.apply(lambda x: "_".join(x.round(2).astype(str)), axis=1)
     series_str = series_str.drop_duplicates(keep = False) #[(~series_str.duplicated(keep = False)) | (df[cols[lag]] != 0)]
     series_shifted_str = df.loc[search_ind, f1].apply(lambda x: "_".join(x.round(2).astype(str)), axis=1)
@@ -81,7 +81,8 @@ def get_all_leak(df, cols=None, nlags=15):
     """
     df =  df.copy()
 #     print(df.head())
-    with Pool(processes=CPU_CORES) as p:
+#     with Pool(processes=CPU_CORES) as p:
+    if True:
         begin_ind = 0
         end_ind = 0
         leak_target = pd.Series(0, index = df.index)
@@ -90,18 +91,29 @@ def get_all_leak(df, cols=None, nlags=15):
             search_ind = (leak_target == 0)
             # print(search_ind)
             print('begin_ind: ', begin_ind, 'end_ind: ', end_ind, "search_ind_len: ", search_ind.sum())
-            res = [p.apply_async(_get_leak, args=(df, cols, search_ind, i)) for i in range(begin_ind, end_ind)]
-            for r in res:
-                target_vals, lag = r.get()
-                # leak_target[target_vals.index] = target_vals
-                df['leak_target_' + str(lag)] = target_vals
+#             res = [p.apply_async(_get_leak, args=(df, cols, search_ind, i)) for i in range(begin_ind, end_ind)]
+#             for r in res:
+#                 target_vals, lag = r.get()
+# #                 print ('target_vale', target_vals.head())
+#                 # leak_target[target_vals.index] = target_vals
+#                 df['leak_target_' + str(lag)] = target_vals
+            target_vals, lag = _get_leak(df, cols, search_ind, begin_ind)
+            df['leak_target_' + str(lag)] = target_vals
             for i in range(begin_ind, end_ind):
                 leak_target[leak_target == 0] = df.loc[leak_target == 0, 'leak_target_' + str(i)]
             leak_train = 0 #leak_target[train.index]
             leak_train_len = 0 #leak_train[leak_train != 0].shape[0]
-            leak_test_len = leak_target[test.index][leak_target != 0].shape[0]
+            leak_test_len = 0 #leak_target[test.index][leak_target != 0].shape[0]
             leak_train_right_len = 0 #leak_train[leak_train.round(0) == train['target'].round(0)].shape[0]
             leak_train_right_ratio = 0 #leak_train_right_len / leak_train_len
+            if IsTrain:
+                leak_train = leak_target[train.index]
+#                 print (leak_train.head())
+                leak_train_len = leak_train[leak_train != 0].shape[0]
+                leak_train_right_len = leak_train[leak_train.round(0) == train['target'].round(0)].shape[0]
+                leak_train_right_ratio = leak_train_right_len / leak_train_len
+            else:
+                leak_test_len = leak_target[test.index][leak_target != 0].shape[0]
             print('Find leak in train and test: ', leak_train_len, leak_test_len, \
                 "leak train right: ", leak_train_right_len, leak_train_right_ratio)
             begin_ind = end_ind
@@ -131,12 +143,18 @@ test["target"] = 0 #train["target"].mean()
 # all_df = pd.concat([train[["target"] + cols], test[["target"]+ cols]]) #.reset_index(drop=True)
 # all_df.head()
 
-NLAGS = 32 #Increasing this might help push score a bit
-used_col = ["target"] + [col for col in cols for cols in leak_list]
+NLAGS = 38 #Increasing this might help push score a bit
+used_col = ["target"] + [col for cols in leak_list for col in cols]
 print ('used_col length: ', len(used_col))
-all_df = get_all_leak(test, cols=cols, nlags=NLAGS)
+if IsTrain:
+    all_df = get_all_leak(train[used_col], cols=cols, nlags=NLAGS)
+else:
+    all_df = get_all_leak(test[used_col], cols=cols, nlags=NLAGS)
 
-all_df[['target', 'leak_target']].to_csv(path + 'add_featrure_set_target_leaktarget_' + str(NLAGS) + "_" + str(NZ_NUM) + '.csv')
+if IsTrain:
+    all_df[['target', 'leak_target']].to_csv(path + 'train_add_featrure_set_target_leaktarget_' + str(NLAGS) + "_" + str(NZ_NUM) + '.csv')
+else:
+    all_df[['target', 'leak_target']].to_csv(path + 'test_add_featrure_set_target_leaktarget_' + str(NLAGS) + "_" + str(NZ_NUM) + '.csv')
 # with open(path + 'leak_target_' + str(NLAGS) + '.pickle', 'wb+') as handle:
 #     pickle.dump(all_df[['target', 'leak_target']], handle, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -144,7 +162,10 @@ sub = pd.read_csv(path + 'sub_2018_08_13_03_19_33.csv', index_col = 'ID')
 leak_target = all_df['leak_target'][test.index]
 # print(leak_target)
 sub.loc[leak_target[leak_target != 0].index, 'target'] = leak_target[leak_target != 0]
-sub.to_csv(path + 'leak_sub_' + str(NLAGS) + '.csv')
+
+if not IsTrain:
+    time_label = time.strftime('_%Y_%m_%d_%H_%M_%S', time.gmtime())
+    sub.to_csv(path + 'leak_sub_' + str(NLAGS) + "_" + time_label + '.csv')
 exit(0)
 
 leaky_cols = ["leaked_target_"+str(i) for i in range(NLAGS)]

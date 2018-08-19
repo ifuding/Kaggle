@@ -10,10 +10,28 @@ import keras_train
 # from RNN_Keras import RNN_Model
 from tensorflow.python.keras.models import Model
 # from xgb import xgb_train
+import pandas as pd
+from sklearn import metrics
 
 # RNN_PARAMS
 RCNN_HIDDEN_UNIT = [128, 64]
 
+def cal_leak_blend_loss(leak_train, model, valide_data, valide_label):
+    # print (leak_train.head)
+    # leak_train = leak_train.copy()
+    pred = pd.Series(model_eval(model[0], model[1], valide_data), index = valide_data.index)
+    # leak_valide_part = leak_train.loc[valide_data.index]
+    # print(leak_valide_part.shape)
+    # print ('valide_data: ', valide_data.head())
+    blend_leak_target = leak_train.loc[valide_data.index, 'leak_target']
+    # loss = np.sqrt(metrics.mean_squared_error(valide_label, blend_leak_target.values))
+    # print ('before blend leak_blend_loss: ', loss)
+    blend_leak_target[blend_leak_target == 0] = pred[blend_leak_target == 0]
+    # print(blend_leak_target[blend_leak_target == np.nan])
+    loss = np.sqrt(metrics.mean_squared_error(valide_label, pred.values))
+    blend_leak_loss = np.sqrt(metrics.mean_squared_error(valide_label, blend_leak_target.values))
+    print ('loss: ', loss, 'leak_blend_loss: ', blend_leak_loss)
+    return loss, blend_leak_loss
 
 def nfold_train(train_data, train_label, model_types = None,
             stacking = False, valide_data = None, valide_label = None,
@@ -36,6 +54,8 @@ def nfold_train(train_data, train_label, model_types = None,
     test_preds = None
     num_fold = 0
     models = []
+    losses = []
+    leak_train = pd.read_csv(flags.input_training_data_path + '/train_target_leaktarget_38_2_2018_08_19_06_02_12.csv', index_col = 'ID').apply(np.log1p)
     for train_index, test_index in kf.split(train_data):
         # print(test_index[:100])
         # exit(0)
@@ -91,6 +111,8 @@ def nfold_train(train_data, train_label, model_types = None,
                 model = lgbm_train(train_part, train_part_label, valide_part, valide_part_label, num_fold,
                         fold, flags = flags)
                 onefold_models.append((model, 'l'))
+                # print (leak_train.head)
+        losses.append(cal_leak_blend_loss(leak_train, onefold_models[0], valide_part, valide_part_label))
         # if stacking:
         #     valide_pred = [model_eval(model[0], model[1], valide_part) for model in onefold_models]
         #     valide_pred = reduce((lambda x, y: np.c_[x, y]), valide_pred)
@@ -111,6 +133,8 @@ def nfold_train(train_data, train_label, model_types = None,
         num_fold += 1
         if num_fold == flags.ensemble_nfold:
             break
+    mean_loss = np.array(losses).mean(axis = 0)
+    print ('Mean loss: ', mean_loss[0], "Mean blend loss: ", mean_loss[1])
     # if stacking:
     #     test_preds /= flags.ensemble_nfold
         # test_data = np.c_[test_data, test_preds]

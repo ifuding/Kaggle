@@ -89,6 +89,16 @@ def blend(sub1, sub2):
     sub_name = data_dir + "sub" + time_label + ".csv"
     blend3[[target]].to_csv(sub_name)
 
+def leak_blend():
+    path = "../../Data/"
+    sub = pd.read_csv(path + 'sub_2018_08_18_06_39_36.csv', index_col = 'ID')
+    leak_target = pd.read_csv(path + 'add_featrure_set_target_leaktarget_38_3.csv', index_col = 'ID')['leak_target']
+    sub.loc[leak_target[leak_target != 0].index, 'target'] = leak_target[leak_target != 0]
+
+    time_label = strftime('_blend_leak_%Y_%m_%d_%H_%M_%S', gmtime())
+    sub_name = path + "sub" + time_label + ".csv"
+    sub.to_csv(sub_name)
+
 def blend_tune(valide_label, sub1, sub2):
     sub1 = sub1.reshape((len(valide_label), -1))
     sub2 = sub2.reshape((len(valide_label), -1))
@@ -145,5 +155,5 @@ if __name__ == "__main__":
         # sub = pd.DataFrame()
         # sub['click_id'] = test_id
         # sub['is_attributed'] = k_pred
-        blend(None, None)
+        leak_blend()
         # l_pred = lgb_pred(valide_data, valide_label)
