@@ -23,7 +23,7 @@ def cal_leak_blend_loss(leak_train, model, valide_data, valide_label):
     # leak_valide_part = leak_train.loc[valide_data.index]
     # print(leak_valide_part.shape)
     # print ('valide_data: ', valide_data.head())
-    blend_leak_target = leak_train.loc[valide_data.index, 'leak_target']
+    blend_leak_target = leak_train.loc[valide_data.index]
     # loss = np.sqrt(metrics.mean_squared_error(valide_label, blend_leak_target.values))
     # print ('before blend leak_blend_loss: ', loss)
     blend_leak_target[blend_leak_target == 0] = pred[blend_leak_target == 0]
@@ -36,7 +36,7 @@ def cal_leak_blend_loss(leak_train, model, valide_data, valide_label):
 def nfold_train(train_data, train_label, model_types = None,
             stacking = False, valide_data = None, valide_label = None,
             test_data = None, train_weight = None, valide_weight = None,
-            flags = None ,tokenizer = None, scores = None, emb_weight = None, cat_max = None):
+            flags = None ,tokenizer = None, scores = None, emb_weight = None, cat_max = None, leak_target = None):
     """
     nfold Training
     """
@@ -55,7 +55,7 @@ def nfold_train(train_data, train_label, model_types = None,
     num_fold = 0
     models = []
     losses = []
-    leak_train = pd.read_csv(flags.input_training_data_path + '/train_target_leaktarget_38_2_2018_08_19_06_02_12.csv', index_col = 'ID').apply(np.log1p)
+    leak_train = leak_target
     for train_index, test_index in kf.split(train_data):
         # print(test_index[:100])
         # exit(0)

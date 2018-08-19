@@ -10,7 +10,7 @@ python3 $1.py --model_type l --full_connect_hn 256,128,64 --stacking False --nfo
         --input-previous-model-path ../Data/lgb_models/philly/ --split_train_val False --train_eval_len 110000000 \
         --eval_len 10000000 --test_for_train False --blend_tune False --stacking False --lgb_boost_dnn false \
         --lgb_ensemble_nfold 5 --load_from_pickle True --vae_mse True --vae_intermediate_dim 400 --vae_latent_dim 200 \
-        --load_from_vae False --rnn_units 10,10 --predict_feature False --aug_data False
+        --load_from_vae False --rnn_units 10,10 --predict_feature False --aug_data False --leak_test_for_train False
 
 # python3 PoolGRU.py --input-training-data-path ../../Data/ --output-model-path . --model_type vdcnn \
 #         --max_seq_len 100 --nfold 2 --emb_dim 32 --epochs 2 --batch_size 128 --ensemble_nfold 1 \

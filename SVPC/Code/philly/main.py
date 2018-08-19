@@ -32,6 +32,7 @@ import matplotlib.pyplot as plt
 from multiprocessing import Pool
 import concurrent.futures
 import glob
+from leak_cols import LEAK_LIST
 
 flags = tf.app.flags
 flags.DEFINE_string('input-training-data-path', "../../Data/", 'data dir override')
@@ -84,6 +85,7 @@ flags.DEFINE_integer('vae_latent_dim', 100, 'vae_latent_dim')
 flags.DEFINE_bool("load_from_vae", False, "load_from_vae")
 flags.DEFINE_bool("predict_feature", False, "predict_feature")
 flags.DEFINE_bool("aug_data", False, "aug_data")
+flags.DEFINE_bool("leak_test_for_train", False, "leak_test_for_train")
 FLAGS = flags.FLAGS
 
 path = FLAGS.input_training_data_path
@@ -219,6 +221,21 @@ def CalcHist(df, HistSize):
             print ("Calc Hist Rows: ", i)
     return pd.DataFrame(np.array(hist_list), index = df.index, columns = ['hist_' + str(i) for i in range(HistSize)])
 
+def gen_statistic_features(df):
+    statistic_features = pd.DataFrame(index = df.index)
+    statistic_features["nz_mean"] = df.apply(lambda x: x[x!=0].mean(), axis=1)
+    statistic_features["nz_max"] = df.apply(lambda x: x[x!=0].max(), axis=1)
+    statistic_features["nz_min"] = df.apply(lambda x: x[x!=0].min(), axis=1)
+    statistic_features["mean"] = df.apply(lambda x: x.mean(), axis=1)
+
+    return statistic_features
+
+def gen_features(df, prefix):
+    statistic_features = gen_statistic_features(df)
+    sort_features = SortData(df)
+    hist_features = CalcHist(df)
+
+
 def AugData(df, df_local, col_select_rate):
     print ('Aug data using col_select_rate: ', col_select_rate)
     df_shape = df.shape
@@ -333,10 +350,12 @@ def load_data(col):
     print("\nData Load Stage")
     if FLAGS.load_from_pickle:
         with open(path + 'train_test_nonormalize.pickle', 'rb') as handle:
-             df, test_ID, y_train, train_row = pickle.load(handle)
-        leak_target = pd.read_csv(path + 'add_featrure_set_target_leaktarget_38_3.csv', index_col = 'ID')
-        leak_target = leak_target.loc[df[train_row:].index, 'leak_target']
-        leak_target = leak_target[leak_target != 0]
+            df, test_ID, y_train, train_row = pickle.load(handle)
+        train_leak_target = pd.read_csv(path + 'train_target_leaktarget_38_1_2018_08_19_16_41_50.csv', index_col = 'ID')
+        test_leak_target = pd.read_csv(path + 'test_target_leaktarget_38_2_2018_08_19_07_53_32.csv', index_col = 'ID')
+        leak_target = train_leak_target.append(test_leak_target)['leak_target'].apply(np.log1p)
+        # leak_target = leak_target.loc[df[train_row:].index, 'leak_target']
+        # leak_target = leak_target[leak_target != 0]
         print ('leak_target shape: ', leak_target.shape)
 
         print("Shape before append columns: ", df.shape)
@@ -489,8 +508,11 @@ def load_data(col):
         train_data = df.iloc[:train_row, :]
 
     # Append leak rows
-    # train_data = train_data.append(df.loc[leak_target.index])
-    # y_train = y_train.append(np.log1p(leak_target))
+    if FLAGS.leak_test_for_train:
+        valid_leak_test_data = leak_target[df[train_row:].index]
+        valid_leak_test_data = valid_leak_test_data[valid_leak_test_data != 0]
+        train_data = train_data.append(df.loc[valid_leak_test_data.index])
+        y_train = y_train.append(valid_leak_test_data)
 
     if FLAGS.predict_feature:
         valid_idx = (df[col] != 0)
@@ -584,7 +606,7 @@ if __name__ == "__main__":
         if not FLAGS.load_stacking_data:
             models, stacking_data, stacking_label, stacking_test_data = nfold_train(train_data, train_label, flags = FLAGS, \
                     model_types = [FLAGS.model_type], scores = scores_text, test_data = test_data, \
-                    valide_data = valide_data, valide_label = valide_label, cat_max = None, emb_weight = None)
+                    valide_data = valide_data, valide_label = valide_label, cat_max = None, emb_weight = None, leak_target = leak_target)
         else:
             for i in range(train_label.shape[1]):
                 models, stacking_data, stacking_label, stacking_test_data = nfold_train(train_data, train_label[:, i], flags = FLAGS, \
