@@ -152,7 +152,7 @@ class DNN_Model:
             train_part_label = None #self.RNN_Target(train_part, train_part_label)
             valide_part_label = None #self.RNN_Target(valide_part, valide_part_label)
         callbacks = [
-                EarlyStopping(monitor='val_loss', patience=50, verbose=0),
+                EarlyStopping(monitor='val_loss', patience=5, verbose=0),
                 RmseEvaluation(validation_data=(DNN_Valide_Data, valide_part_label), interval=1, \
                     batch_interval = self.batch_interval, scores = self.scores)
                 ]

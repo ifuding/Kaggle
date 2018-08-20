@@ -168,18 +168,18 @@ def Normalize(df, func):
                 except Exception as exc:
                     print('%dth feature normalize generate an exception: %s' % (ind, exc))
         col_ind_begin = col_ind_end
-        if col_ind_begin % 100 == 0:
+        if col_ind_begin % 10000 == 0:
             print('Gen %d normalized features' % col_ind_begin)
 
 def SortColumn(s, r):
     temp = np.array(sorted(s,reverse=True))
-    if r % 1000 == 0:
+    if r % 10000 == 0:
         print ("sort rows: ", r)
     return r, temp, np.sum(temp > 0)
 
-def SortData(df):
+def SortData(df, sort_len):
     CPU_CORES = 8
-    sort_array = df.values
+    sort_array = df.copy().values
     res = [SortColumn(sort_array[r, :], r) for r in range(sort_array.shape[0])]
     # with Pool(processes=CPU_CORES) as p:
     #     res = [p.apply_async(SortColumn, args=(sort_array[r, :], r)) for r in range(sort_array.shape[0])]
@@ -190,7 +190,8 @@ def SortData(df):
         if valid_column > max_valid_column:
             max_valid_column = valid_column
     print ("max_valid_column: ", max_valid_column)
-    return pd.DataFrame(sort_array[:, :SORT_LEN], index = df.index, columns = ['sort_' + str(i) for i in range(SORT_LEN)])
+    sort_len = min(sort_len, sort_array.shape[1])
+    return pd.DataFrame(sort_array[:, :sort_len], index = df.index, columns = ['sort_' + str(i) for i in range(sort_len)])
 
 def CalcHistMeta(r, HistSize):
     hist = np.zeros(HistSize)
@@ -217,9 +218,12 @@ def CalcHist(df, HistSize):
         hist_list.append(CalcHistMeta(df_local.iloc[i], HistSize))
         # print (hist_list)
         # exit(0)
-        if i % 1000 == 0:
+        if i % 10000 == 0:
             print ("Calc Hist Rows: ", i)
     return pd.DataFrame(np.array(hist_list), index = df.index, columns = ['hist_' + str(i) for i in range(HistSize)])
+
+def norm_cal_hist(df, hist_size):
+    return CalcHist(HistProcess(df), hist_size)
 
 def gen_statistic_features(df):
     statistic_features = pd.DataFrame(index = df.index)
@@ -227,14 +231,39 @@ def gen_statistic_features(df):
     statistic_features["nz_max"] = df.apply(lambda x: x[x!=0].max(), axis=1)
     statistic_features["nz_min"] = df.apply(lambda x: x[x!=0].min(), axis=1)
     statistic_features["mean"] = df.apply(lambda x: x.mean(), axis=1)
+    statistic_features["ez"] = df.apply(lambda x: len(x[x==0]), axis=1)
 
     return statistic_features
 
-def gen_features(df, prefix):
+def gen_features(df, prefix, hist_size = HIST_SIZE, sort_len = SORT_LEN):
+    print ('Gen features for cols: ', prefix, hist_size, sort_len)
     statistic_features = gen_statistic_features(df)
-    sort_features = SortData(df)
-    hist_features = CalcHist(df)
+    sort_features = SortData(df, sort_len)
+    hist_features = norm_cal_hist(df, hist_size)
 
+    features = pd.concat([sort_features, hist_features, statistic_features], axis = 1, sort = False)
+    features_rename_dict = dict([(f, prefix + f) for f in features.columns.values])
+    features.rename(columns = features_rename_dict, inplace = True)
+    return features
+
+def find_top_nz_cols(df, cols_list, k):
+    cols_nz_dict = {}
+    for i in range(len(cols_list)):
+        cols = cols_list[i]
+        nz_num = df[cols].apply(lambda x: len(x[x != 0])).sum()
+        cols_nz_dict[i] = nz_num
+    sort_cols = pd.Series(cols_nz_dict).sort_values(ascending = False).index.values[:k]
+    sort_cols = [cols_list[i] for i in sort_cols]
+    print ('Top nz cols: ', sort_cols)
+    return sort_cols
+
+def gen_group_features(df, all_hist_size, all_sort_len, group_hist_size, group_sort_len, group_num):
+    all_cols_features = gen_features(df, 'all_cols_', all_hist_size, all_sort_len)
+    cols_group_features = []
+    for cols in find_top_nz_cols(df, LEAK_LIST, group_num):
+        single_group_features = gen_features(df[cols], cols[0] + '_', group_hist_size, group_sort_len)
+        cols_group_features.append(single_group_features)
+    return pd.concat([all_cols_features] + cols_group_features, axis = 1, sort = False)
 
 def AugData(df, df_local, col_select_rate):
     print ('Aug data using col_select_rate: ', col_select_rate)
@@ -351,8 +380,8 @@ def load_data(col):
     if FLAGS.load_from_pickle:
         with open(path + 'train_test_nonormalize.pickle', 'rb') as handle:
             df, test_ID, y_train, train_row = pickle.load(handle)
-        train_leak_target = pd.read_csv(path + 'train_target_leaktarget_38_1_2018_08_19_16_41_50.csv', index_col = 'ID')
-        test_leak_target = pd.read_csv(path + 'test_target_leaktarget_38_2_2018_08_19_07_53_32.csv', index_col = 'ID')
+        train_leak_target = pd.read_csv(path + 'train_target_leaktarget_38_1_2018_08_20_03_07_22.csv', index_col = 'ID')
+        test_leak_target = pd.read_csv(path + 'test_target_leaktarget_38_1_2018_08_19_17_15_26.csv', index_col = 'ID')
         leak_target = train_leak_target.append(test_leak_target)['leak_target'].apply(np.log1p)
         # leak_target = leak_target.loc[df[train_row:].index, 'leak_target']
         # leak_target = leak_target[leak_target != 0]
@@ -374,7 +403,7 @@ def load_data(col):
         with open(path + 'hist_df.pickle', 'rb+') as handle:
             hist_df = pickle.load(handle)        
 
-        append_pred_columns(df)
+        # append_pred_columns(df)
         top_cols_pred = [col + '_p' for col in top_cols]
         top_cols_new = [col + '_new' for col in top_cols]
         # df[top_cols_pred + top_cols_new].to_csv('new_cols.csv')
@@ -407,15 +436,27 @@ def load_data(col):
         # statistic_features_cols = ["nz_mean", "nz_max", "nz_min", "ez", "mean", "max", "min", "pred_mean", "pred_max", "pred_min"]
         # with open(path + 'statistic_features.pickle', 'wb+') as handle:
         #     pickle.dump(df[statistic_features_cols], handle, protocol=pickle.HIGHEST_PROTOCOL)
-        with open(path + 'statistic_features.pickle', 'rb+') as handle:
-            statistic_features = pickle.load(handle)
+        # with open(path + 'statistic_features.pickle', 'rb+') as handle:
+        #     statistic_features = pickle.load(handle)
 
-        pred_mean = pd.read_csv(path + '_pred_mean_2018_08_14_14.csv', index_col = 'ID').rename(columns = {'target': 'aug_pred_mean'})
-        pred_max = pd.read_csv(path + '_pred_max_2018_08_14_14.csv', index_col = 'ID').rename(columns = {'target': 'aug_pred_max'})
-        pred_nz_mean = pd.read_csv(path + '_pred_nz_mean_2018_08_14_16.csv', index_col = 'ID').rename(columns = {'target': 'aug_pred_nz_mean'})
-        pred_nz_min = pd.read_csv(path + '_pred_nz_min_2018_08_14_17.csv', index_col = 'ID').rename(columns = {'target': 'aug_pred_nz_min'})
-        df.drop(columns = origin_cols, inplace = True)
-        df = pd.concat([sort_df, hist_df, statistic_features, pred_mean, pred_max, pred_nz_mean, pred_nz_min], axis = 1, sort = False)
+        # pred_mean = pd.read_csv(path + '_pred_mean_2018_08_14_14.csv', index_col = 'ID').rename(columns = {'target': 'aug_pred_mean'})
+        # pred_max = pd.read_csv(path + '_pred_max_2018_08_14_14.csv', index_col = 'ID').rename(columns = {'target': 'aug_pred_max'})
+        # pred_nz_mean = pd.read_csv(path + '_pred_nz_mean_2018_08_14_16.csv', index_col = 'ID').rename(columns = {'target': 'aug_pred_nz_mean'})
+        # pred_nz_min = pd.read_csv(path + '_pred_nz_min_2018_08_14_17.csv', index_col = 'ID').rename(columns = {'target': 'aug_pred_nz_min'})
+        # df.drop(columns = origin_cols, inplace = True)
+        # df = pd.concat([sort_df, hist_df, statistic_features, pred_mean, pred_max, pred_nz_mean, pred_nz_min], axis = 1, sort = False).fillna(0)
+        all_hist_size = 100
+        all_sort_len = 100
+        group_hist_size = 100
+        group_sort_len = 20
+        group_num = 4
+        df = gen_group_features(df, all_hist_size, all_sort_len, group_hist_size, group_sort_len, group_num).fillna(0)
+        # y_train = y_train[:1000]
+        feature_label = '_'.join([str(all_hist_size), str(all_sort_len), str(group_hist_size), str(group_sort_len)])
+        with open(path + 'group_features_' + feature_label + '.pickle', 'wb+') as handle:
+            pickle.dump(df, handle, protocol=pickle.HIGHEST_PROTOCOL)
+        # with open(path + 'group_features.pickle', 'rb+') as handle:
+        #     df = pickle.load(handle)
         print("Shape after append columns: ", df.shape)
         # with Pool(processes=8) as p:
         #     res = [p.apply_async(select_pred, args=(df, col)) for col in top_cols[:5]]
@@ -431,7 +472,7 @@ def load_data(col):
         print("Do normalize...")
         df = df.apply(np.log1p)
         # df = (df - df.mean())/ df.std()
-        # Normalize(df, Avg_Std_Normalize)
+        # Normalize(df, Min_Max_Normalize)
         print(df.head())
         # df = rank_INT_DF(df) #df.apply(rank_INT)
         # with open(path + 'train_test_rank_int_rand_tie.pickle', 'wb+') as handle:
@@ -511,6 +552,7 @@ def load_data(col):
     if FLAGS.leak_test_for_train:
         valid_leak_test_data = leak_target[df[train_row:].index]
         valid_leak_test_data = valid_leak_test_data[valid_leak_test_data != 0]
+        print ('Leak test lenght: ', valid_leak_test_data.shape[0])
         train_data = train_data.append(df.loc[valid_leak_test_data.index])
         y_train = y_train.append(valid_leak_test_data)
 

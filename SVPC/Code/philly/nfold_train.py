@@ -145,7 +145,7 @@ def model_eval(model, model_type, data_frame):
     """
     """
     if model_type == 'l':
-        preds = model.predict(data_frame[keras_train.USED_FEATURE_LIST].values)
+        preds = model.predict(data_frame[keras_train.USED_FEATURE_LIST].values, num_iteration=model.best_iteration)
     elif model_type == 'k' or model_type == 'LR' or model_type == 'DNN' or model_type == 'rcnn' \
         or model_type == 'r' or model_type == 'cnn':
         preds = model.predict(data_frame, verbose = 2)
@@ -155,7 +155,7 @@ def model_eval(model, model_type, data_frame):
         print("ToDO")
     elif model_type == 'x':
         preds = model.predict(xgb.DMatrix(data_frame), ntree_limit=model.best_ntree_limit)
-    return preds #.reshape((data_frame.shape[0], -1))
+    return preds.reshape((data_frame.shape[0], ))
 
 def models_eval(models, data):
     preds = None

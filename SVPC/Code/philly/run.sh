@@ -2,7 +2,7 @@
 set -x
 
 python3 $1.py --model_type l --full_connect_hn 256,128,64 --stacking False --nfold 5 \
-        --batch_size 256 --full_connect_dropout 0.4 \
+        --batch_size 32 --full_connect_dropout 0.2 \
         --epochs 100 --ensemble_nfold 5 --batch_interval 20000 \
         --input-training-data-path ../../Data/ --output-model-path ../../Data/ \
         --debug False --neg_sample False --sample_C 40 --load_only_singleCnt True --log_transform False \

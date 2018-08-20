@@ -30,14 +30,14 @@ def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fol
             'max_depth': 50,#12, #6, # 10,
             'learning_rate': 0.025, # 0.025,
            # 'feature_fraction': 0.5,#0.35, # 0.6
-            'verbose': 0,
+            # 'verbose': 0,
             'num_boost_round': 500, #361,
             'feature_fraction_seed': fold_seed,
             #'drop_rate': 0.05,
             # 'bagging_fraction': 0.8,
             # 'bagging_freq': 20,
             # 'bagging_seed': fold_seed,
-             'early_stopping_round': 1500,
+             'early_stopping_round': 100,
             # 'random_state': 10
             # 'verbose_eval': 20
             #'min_data_in_leaf': 665
@@ -48,7 +48,7 @@ def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fol
     bst = lgb.train(
                     params ,
                     d_train,
-                    verbose_eval = 50,
+                    verbose_eval = 200,
                     valid_sets = [d_train, d_valide],
                     # feature_name= keras_train.DENSE_FEATURE_LIST,
                     #feval = gini_lgbm
@@ -61,7 +61,7 @@ def lgbm_train(train_part, train_part_label, valide_part, valide_part_label, fol
     # exit(0)
     feature_imp = bst.feature_importance(importance_type = 'gain')
     sort_ind = np.argsort(feature_imp)[::-1]
-    print (np.c_[np.array(FEATURE_LIST)[sort_ind], feature_imp[sort_ind]])
+    print (np.c_[np.array(FEATURE_LIST)[sort_ind], feature_imp[sort_ind]][:10])
     # print (np.array(keras_train.FEATURE_LIST)[np.argsort(feature_imp)])
     # exit(0)
     # cv_result = lgb.cv(params, d_train, nfold=fold) #, feval = gini_lgbm)
